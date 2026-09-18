@@ -23,6 +23,7 @@
         <el-menu-item index="rules">过滤规则</el-menu-item>
         <el-menu-item index="jobs">投递任务</el-menu-item>
         <el-menu-item index="commands">控制命令</el-menu-item>
+        <el-menu-item index="queue">排队任务</el-menu-item>
         <el-menu-item index="audit">操作日志</el-menu-item>
         <el-menu-item index="login_history">登录历史</el-menu-item>
         <el-menu-item v-if="userRole === 'super_admin'" index="users">用户管理</el-menu-item>
@@ -330,6 +331,36 @@
           </el-table>
         </el-card>
 
+        <el-card v-else-if="activePage === 'queue'">
+          <template #header>
+            <div class="filters">
+              <span>任务每 2 秒自动刷新</span>
+              <el-button @click="loadQueueCommands">立即刷新</el-button>
+            </div>
+          </template>
+          <el-table :data="commands" stripe>
+            <el-table-column prop="id" label="任务 ID" width="90" />
+            <el-table-column prop="command_type" label="类型" width="150" />
+            <el-table-column label="状态" width="110">
+              <template #default="{ row }">
+                <el-tag :type="row.status === 'success' ? 'success' : row.status === 'failed' ? 'danger' : 'warning'">{{ row.status }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="进度" min-width="260">
+              <template #default="{ row }">
+                <el-progress :percentage="row.progress?.percent || 0" />
+                <div class="queue-detail">
+                  完成 {{ row.progress?.completed || 0 }} / {{ row.progress?.total || 0 }}
+                  ，成功 {{ row.progress?.success || 0 }}
+                  ，失败 {{ row.progress?.failed || 0 }}
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="result" label="结果" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="error" label="错误" min-width="180" show-overflow-tooltip />
+          </el-table>
+        </el-card>
+
         <section v-else-if="activePage === 'commands'">
           <el-card class="command-card">
             <template #header>添加搬运源</template>
@@ -470,7 +501,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import * as echarts from 'echarts'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -529,6 +560,7 @@ const lastRefresh = ref('')
 const chartElement = ref(null)
 const newRoute = ref({ source_id: null, target_id: null })
 const commands = ref([])
+let queueTimer = null
 const auditLogs = ref([])
 const loginHistory = ref([])
 const webUsers = ref([])
@@ -614,6 +646,11 @@ async function refreshAll() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadQueueCommands() {
+  if (!authenticated.value) return
+  commands.value = await getControlCommands()
 }
 
 async function loadJobs() {
@@ -1027,6 +1064,8 @@ async function submitImmediateSync() {
   await enqueueSync(syncForm.value.sourceId, syncForm.value.limit)
   ElMessage.success('搬运命令已提交，后台将按顺序处理')
   syncDialog.value = false
+  activePage.value = 'queue'
+  await loadQueueCommands()
   setTimeout(refreshAll, 1500)
 }
 
@@ -1074,5 +1113,14 @@ function selectPage(index) {
 
 onMounted(() => {
   if (authenticated.value) refreshAll()
+  queueTimer = window.setInterval(() => {
+    if (authenticated.value && (activePage.value === 'queue' || activePage.value === 'commands')) {
+      loadQueueCommands()
+    }
+  }, 2000)
+})
+
+onUnmounted(() => {
+  if (queueTimer) window.clearInterval(queueTimer)
 })
 </script>

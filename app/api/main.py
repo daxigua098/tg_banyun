@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -49,6 +50,7 @@ from app.services.control_command_service import (
     COMMAND_SYNC,
     enqueue_control_command,
     list_control_commands,
+    load_command_payload,
 )
 from app.services.login_history_service import (
     list_login_history,
@@ -874,6 +876,76 @@ def create_app() -> FastAPI:
             for item in rows
         ]
 
+    async def serialize_control_command(
+        session: AsyncSession,
+        item: Any,
+    ) -> dict[str, Any]:
+        payload = load_command_payload(item)
+        total = 0
+        success = 0
+        failed = 0
+        pending = 0
+        if item.command_type == COMMAND_SYNC:
+            filters = [DeliveryJob.created_at >= item.created_at]
+            source_value = payload.get("source_id")
+            if source_value != "all" and source_value is not None:
+                filters.append(DeliveryJob.source_id == int(source_value))
+            rows = await session.execute(
+                select(DeliveryJob.status, func.count(DeliveryJob.id))
+                .where(*filters)
+                .group_by(DeliveryJob.status)
+            )
+            counts = {str(status): int(count) for status, count in rows.all()}
+            success = counts.get("success", 0)
+            failed = counts.get("failed", 0)
+            pending = (
+                counts.get("pending", 0)
+                + counts.get("processing", 0)
+                + counts.get("retrying", 0)
+            )
+            total = sum(counts.values())
+        elif item.command_type == COMMAND_MANUAL_POST:
+            total = len(payload.get("target_ids") or [])
+            if item.status == "success" and item.result:
+                try:
+                    success = len(json.loads(item.result).get("sent") or [])
+                except (TypeError, json.JSONDecodeError):
+                    success = total
+            elif item.status in {"failed", "success"}:
+                success = total if item.status == "success" else 0
+            else:
+                pending = total
+        else:
+            total = 1
+            if item.status == "success":
+                success = 1
+            elif item.status == "failed":
+                failed = 1
+            else:
+                pending = 1
+
+        completed = success + failed
+        percent = 100 if total == 0 else min(100, int(completed * 100 / total))
+        if item.status == "success":
+            percent = 100
+        return {
+            "id": item.id,
+            "command_type": item.command_type,
+            "status": item.status,
+            "result": item.result,
+            "error": item.error,
+            "created_at": item.created_at,
+            "processed_at": item.processed_at,
+            "progress": {
+                "total": total,
+                "completed": completed,
+                "success": success,
+                "failed": failed,
+                "pending": pending,
+                "percent": percent,
+            },
+        }
+
     @app.get("/api/control/commands", dependencies=[Depends(require_auth)])
     async def control_commands(
         limit: int = Query(default=50, ge=1, le=500),
@@ -925,6 +997,7 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
 
 
 
