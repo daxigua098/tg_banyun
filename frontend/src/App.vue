@@ -101,20 +101,75 @@
         </el-card>
 
         <el-card v-else-if="activePage === 'routes'">
-          <div class="filters">
-            <el-select v-model="newRoute.source_id" placeholder="选择源" style="width: 180px">
-              <el-option v-for="source in sources" :key="source.id" :label="`${source.id} - ${source.title}`" :value="source.id" />
-            </el-select>
-            <el-select v-model="newRoute.target_id" placeholder="选择目标" style="width: 180px">
-              <el-option v-for="target in targets" :key="target.id" :label="`${target.id} - ${target.title}`" :value="target.id" />
-            </el-select>
-            <el-button type="primary" @click="addRoute">建立路由</el-button>
+          <template #header>
+            <div>
+              <div class="route-title">建立搬运搭配关系</div>
+              <div class="route-subtitle">先选择搬运源，再选择接收目标。建立后，该源的新帖子会按这个方向发送。</div>
+            </div>
+          </template>
+
+          <div class="route-builder">
+            <div class="route-endpoint-card route-source-card">
+              <div class="route-endpoint-label source">搬运源</div>
+              <el-select v-model="newRoute.source_id" class="route-select" placeholder="请选择搬运源" filterable>
+                <el-option
+                  v-for="source in sources"
+                  :key="source.id"
+                  :label="`${source.id} · ${source.display_name || source.title}`"
+                  :value="source.id"
+                />
+              </el-select>
+            </div>
+
+            <div class="route-connector" aria-label="指向接收目标">→</div>
+
+            <div class="route-endpoint-card route-target-card">
+              <div class="route-endpoint-label target">接收目标</div>
+              <el-select v-model="newRoute.target_id" class="route-select" placeholder="请选择接收目标" filterable>
+                <el-option
+                  v-for="target in targets"
+                  :key="target.id"
+                  :label="`${target.id} · ${target.display_name || target.title}`"
+                  :value="target.id"
+                />
+              </el-select>
+            </div>
+
+            <el-button class="route-create-button" type="primary" size="large" @click="addRoute">
+              建立搭配关系
+            </el-button>
           </div>
+
+          <el-alert
+            class="route-tip"
+            title="搭配提示：左侧是内容来源，右侧是内容发送目标，两者通过中间箭头建立对应关系。"
+            type="info"
+            :closable="false"
+            show-icon
+          />
+
           <el-table :data="routes" stripe>
             <el-table-column prop="id" label="ID" width="70" />
-            <el-table-column prop="source_id" label="源 ID" width="100" />
-            <el-table-column prop="target_id" label="目标 ID" width="100" />
-            <el-table-column prop="enabled" label="状态" width="100" />
+            <el-table-column label="搬运源" min-width="240">
+              <template #default="{ row }">
+                <el-tag type="primary" effect="plain">源</el-tag>
+                <span class="route-cell-name">{{ sourceName(row.source_id) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="方向" width="80" align="center">
+              <template #default><span class="route-table-arrow">→</span></template>
+            </el-table-column>
+            <el-table-column label="接收目标" min-width="240">
+              <template #default="{ row }">
+                <el-tag type="success" effect="plain">目标</el-tag>
+                <span class="route-cell-name">{{ targetName(row.target_id) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="110">
+              <template #default="{ row }">
+                <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '已启用' : '已停用' }}</el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="100">
               <template #default="{ row }">
                 <el-button type="danger" link @click="removeRoute(row)">删除</el-button>
@@ -749,13 +804,24 @@ async function changeTargetEnabled(row) {
   ElMessage.success('目标状态已更新')
 }
 
+function sourceName(sourceId) {
+  const source = sources.value.find((item) => item.id === sourceId)
+  return source ? `${source.display_name || source.title}（ID ${source.id}）` : `源 ${sourceId}`
+}
+
+function targetName(targetId) {
+  const target = targets.value.find((item) => item.id === targetId)
+  return target ? `${target.display_name || target.title}（ID ${target.id}）` : `目标 ${targetId}`
+}
+
 async function addRoute() {
   if (!newRoute.value.source_id || !newRoute.value.target_id) {
     ElMessage.warning('请选择源和目标')
     return
   }
   await createRoute(newRoute.value.source_id, newRoute.value.target_id)
-  ElMessage.success('路由已建立')
+  ElMessage.success('搬运搭配关系已建立')
+  newRoute.value = { source_id: null, target_id: null }
   await refreshAll()
 }
 

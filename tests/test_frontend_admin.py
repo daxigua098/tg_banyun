@@ -22,3 +22,14 @@ def test_frontend_retry_failed_helpers_are_removed() -> None:
     assert "retryFailed" not in app_source
     assert "retryFailed" not in api_source
     assert "function retry(" not in app_source
+
+
+def test_route_builder_has_clear_source_and_target_labels() -> None:
+    source = (PROJECT_ROOT / "frontend" / "src" / "App.vue").read_text(encoding="utf-8")
+
+    assert 'class="route-builder"' in source
+    assert 'class="route-endpoint-label source">搬运源<' in source
+    assert 'class="route-endpoint-label target">接收目标<' in source
+    assert '建立搭配关系' in source
+    assert 'sourceName(row.source_id)' in source
+    assert 'targetName(row.target_id)' in source
