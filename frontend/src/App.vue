@@ -328,8 +328,9 @@ import {
   updateRule,
 } from './api'
 
-const authenticated = ref(Boolean(localStorage.getItem('admin_api_token')))
-const tokenInput = ref('')
+const authenticated = ref(Boolean(localStorage.getItem('admin_session_token') || localStorage.getItem('admin_api_token')))
+const userRole = ref(localStorage.getItem('admin_user_role') || '')
+const loginForm = ref({ username: 'admin', password: '' })
 const activePage = ref('dashboard')
 const status = ref(null)
 const sources = ref([])
@@ -539,8 +540,8 @@ async function login() {
     await refreshAll()
   } catch (error) {
     localStorage.removeItem('admin_session_token')
-  localStorage.removeItem('admin_user_role')
-  userRole.value = ''
+    localStorage.removeItem('admin_user_role')
+    userRole.value = ''
     authenticated.value = false
     ElMessage.error(error.response?.data?.detail || '登录失败')
   }
