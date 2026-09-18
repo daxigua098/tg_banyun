@@ -2,8 +2,9 @@
   <div v-if="!authenticated" class="login-shell">
     <el-card class="login-card">
       <h1>TG-Mirror-Bot 管理后台</h1>
-      <p>请输入管理员 API Token</p>
-      <el-input v-model="tokenInput" type="password" show-password placeholder="ADMIN_API_TOKEN" @keyup.enter="login" />
+      <p>请输入管理员用户名和密码</p>
+      <el-input v-model="loginForm.username" placeholder="管理员用户名" @keyup.enter="login" />
+      <el-input v-model="loginForm.password" type="password" show-password placeholder="管理员密码" class="login-input" @keyup.enter="login" />
       <el-button type="primary" class="login-button" @click="login">登录</el-button>
     </el-card>
   </div>
@@ -213,6 +214,7 @@ import { ElMessage } from 'element-plus'
 import {
   checkAuth,
   createRoute,
+  login as loginRequest,
   deleteRoute,
   enqueueAddSource,
   enqueueAddTarget,
@@ -419,24 +421,26 @@ async function queueSync() {
 }
 
 async function login() {
-  if (!tokenInput.value) {
-    ElMessage.warning('请输入管理员 Token')
+  if (!loginForm.value.username || !loginForm.value.password) {
+    ElMessage.warning('请输入用户名和密码')
     return
   }
-  localStorage.setItem('admin_api_token', tokenInput.value)
   try {
-    await checkAuth()
+    const result = await loginRequest(loginForm.value.username, loginForm.value.password)
+    localStorage.setItem('admin_session_token', result.token)
+    localStorage.removeItem('admin_api_token')
     authenticated.value = true
-    tokenInput.value = ''
+    loginForm.value.password = ''
     await refreshAll()
   } catch (error) {
-    localStorage.removeItem('admin_api_token')
+    localStorage.removeItem('admin_session_token')
     authenticated.value = false
-    ElMessage.error('登录失败，请检查 Token')
+    ElMessage.error(error.response?.data?.detail || '登录失败')
   }
 }
 
 function logout(showMessage = true) {
+  localStorage.removeItem('admin_session_token')
   localStorage.removeItem('admin_api_token')
   authenticated.value = false
   if (showMessage) ElMessage.success('已退出登录')

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -15,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import PROJECT_ROOT, AppConfig, load_config
+from app.core.auth import create_session_token, verify_session_token
 from app.core.heartbeat import is_process_running, read_runtime_status
 from app.core.runtime_control import is_runtime_paused, set_runtime_paused
 from app.database import dispose_database, get_session_factory, init_database
@@ -52,6 +54,11 @@ class EnabledUpdate(BaseModel):
 class RouteCreate(BaseModel):
     source_id: int = Field(gt=0)
     target_id: int = Field(gt=0)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 class AddSourceCommand(BaseModel):
@@ -100,9 +107,19 @@ def create_app() -> FastAPI:
         request: Request,
         authorization: str | None = Header(default=None),
     ) -> None:
-        token = request.app.state.config.web.api_token
-        if token and authorization != f"Bearer {token}":
-            raise HTTPException(status_code=401, detail="未授权")
+        web = request.app.state.config.web
+        supplied = (
+            authorization.removeprefix("Bearer ").strip()
+            if authorization and authorization.startswith("Bearer ")
+            else ""
+        )
+        if web.api_token and hmac.compare_digest(supplied, web.api_token):
+            return
+        if verify_session_token(web, supplied) is not None:
+            return
+        if not web.api_token and not web.admin_password:
+            return
+        raise HTTPException(status_code=401, detail="未授权")
 
     async def session_dependency() -> AsyncIterator[AsyncSession]:
         factory = get_session_factory()
@@ -112,6 +129,22 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "time": datetime.now(UTC).isoformat(timespec="seconds")}
+
+    @app.post("/api/auth/login")
+    async def login(payload: LoginRequest, request: Request) -> dict[str, Any]:
+        web = request.app.state.config.web
+        if not web.admin_password:
+            raise HTTPException(status_code=400, detail="管理员账号未配置")
+        valid_username = hmac.compare_digest(payload.username, web.admin_username)
+        valid_password = hmac.compare_digest(payload.password, web.admin_password)
+        if not valid_username or not valid_password:
+            raise HTTPException(status_code=401, detail="用户名或密码错误")
+        token, expires_at = create_session_token(web, web.admin_username)
+        return {
+            "token": token,
+            "expires_at": expires_at,
+            "username": web.admin_username,
+        }
 
     @app.get("/api/auth/check", dependencies=[Depends(require_auth)])
     async def auth_check() -> dict[str, bool]:

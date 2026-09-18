@@ -6,7 +6,7 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('admin_api_token')
+  const token = localStorage.getItem('admin_session_token') || localStorage.getItem('admin_api_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -45,3 +45,5 @@ export const enqueueSync = (sourceId, limit = 100) =>
   api.post('/api/control/sync', { source_id: sourceId, limit }).then((response) => response.data)
 
 export const checkAuth = () => api.get('/api/auth/check').then((response) => response.data)
+
+export const login = (username, password) => api.post('/api/auth/login', { username, password }).then((response) => response.data)

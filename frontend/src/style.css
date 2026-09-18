@@ -30,3 +30,4 @@ body { background: #f4f6f9; color: #1f2937; font-family: system-ui, "Microsoft Y
 .login-card h1 { margin: 0 0 8px; font-size: 24px; }
 .login-card p { color: #6b7280; margin: 0 0 20px; }
 .login-button { width: 100%; margin-top: 16px; }
+.login-input { margin-top: 12px; }

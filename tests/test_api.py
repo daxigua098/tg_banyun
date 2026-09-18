@@ -10,6 +10,8 @@ from app.config import load_config
 def test_api_health_and_sources(monkeypatch) -> None:
     config = load_config()
     config.web.api_token = ""
+    config.web.admin_password = ""
+    config.web.session_secret = ""
     monkeypatch.setattr(api_main, "load_config", lambda: config)
     with TestClient(create_app()) as client:
         health = client.get("/health")
@@ -23,6 +25,8 @@ def test_api_health_and_sources(monkeypatch) -> None:
 def test_control_command_list(monkeypatch) -> None:
     config = load_config()
     config.web.api_token = ""
+    config.web.admin_password = ""
+    config.web.session_secret = ""
     monkeypatch.setattr(api_main, "load_config", lambda: config)
     with TestClient(create_app()) as client:
         response = client.get("/api/control/commands")
@@ -46,3 +50,25 @@ def test_api_token_authentication(monkeypatch) -> None:
     assert unauthorized.status_code == 401
     assert authorized.status_code == 200
     assert authorized.json() == {'authenticated': True}
+
+def test_api_username_password_login(monkeypatch) -> None:
+    config = load_config()
+    config.web.api_token = ''
+    config.web.admin_username = 'admin'
+    config.web.admin_password = 'password'
+    config.web.session_secret = 'session-secret'
+    monkeypatch.setattr(api_main, 'load_config', lambda: config)
+
+    with TestClient(create_app()) as client:
+        login = client.post(
+            '/api/auth/login',
+            json={'username': 'admin', 'password': 'password'},
+        )
+        token = login.json()['token']
+        check = client.get(
+            '/api/auth/check',
+            headers={'Authorization': f'Bearer {token}'},
+        )
+
+    assert login.status_code == 200
+    assert check.status_code == 200

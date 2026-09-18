@@ -129,6 +129,10 @@ class WebConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     api_token: str = ""
+    admin_username: str = "admin"
+    admin_password: str = ""
+    session_secret: str = ""
+    session_hours: int = Field(default=24, ge=1)
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:5173",
@@ -210,5 +214,8 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     if os.getenv("TG_ADMIN_IDS"):
         management_bot["admin_user_ids"] = _parse_admin_ids(os.environ["TG_ADMIN_IDS"])
     web["api_token"] = os.getenv("ADMIN_API_TOKEN", web.get("api_token", ""))
+    web["admin_username"] = os.getenv("ADMIN_USERNAME", web.get("admin_username", "admin"))
+    web["admin_password"] = os.getenv("ADMIN_PASSWORD", web.get("admin_password", ""))
+    web["session_secret"] = os.getenv("ADMIN_SESSION_SECRET", web.get("session_secret", ""))
 
     return AppConfig.model_validate(raw)
