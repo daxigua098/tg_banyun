@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.config import AppConfig, HistoryConfig, TransferConfig
+from app.config import AppConfig, ContentFilterConfig, HistoryConfig, TransferConfig
 from app.models import Base, Source
 from app.services.history_service import HistorySyncService
 
@@ -75,4 +75,65 @@ async def test_history_skips_service_and_pinned_messages() -> None:
         assert source.last_synced_message_id == 4
         assert source.sync_status == "ready"
 
+    await engine.dispose()
+
+class FakeMediaHistoryClient:
+    async def iter_messages(self, entity: object, **kwargs: object):
+        yield SimpleNamespace(id=1, action=None, pinned=False, photo=None, video=None, media=None)
+        yield SimpleNamespace(
+            id=2,
+            action=None,
+            pinned=False,
+            photo=object(),
+            video=None,
+            media=None,
+        )
+        yield SimpleNamespace(
+            id=3,
+            action=None,
+            pinned=False,
+            photo=None,
+            video=object(),
+            media=None,
+        )
+        yield SimpleNamespace(
+            id=4,
+            action=object(),
+            pinned=False,
+            photo=None,
+            video=None,
+            media=None,
+        )
+
+
+async def test_history_media_only_mode_skips_text() -> None:
+    session_factory, engine = await _build_factory()
+    config = AppConfig(
+        history=HistoryConfig(default_limit=2, skip_pinned=True),
+        content_filter=ContentFilterConfig(media_only=True),
+        transfer=TransferConfig(delay_seconds=0),
+    )
+    transfer = FakeTransfer()
+
+    async with session_factory() as session:
+        session.add(
+            Source(
+                raw_input="@media_source",
+                normalized_key="username:media_source",
+                tg_id=101,
+                title="Media Source",
+            )
+        )
+        await session.commit()
+
+    service = HistorySyncService(
+        FakeMediaHistoryClient(),  # type: ignore[arg-type]
+        session_factory,
+        transfer,  # type: ignore[arg-type]
+        config,
+    )
+    inspected = await service.sync_source(1, limit=2)
+
+    assert inspected == 2
+    assert transfer.enqueued == [(1, 2), (1, 3)]
     await engine.dispose()

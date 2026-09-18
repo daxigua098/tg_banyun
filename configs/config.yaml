@@ -35,6 +35,11 @@ history:
   order: old_to_new
   skip_pinned: true
 
+content_filter:
+  media_only: true
+  allow_photo: true
+  allow_video: true
+
 logging:
   level: INFO
   file: logs/app.log

@@ -82,6 +82,19 @@ python main.py route list
 
 这条路由表示：源 `1` 的每条消息依次投递到目标 `1`、目标 `2`。
 
+## 内容过滤
+
+当前配置只允许图片和视频进入投递队列：
+
+```yaml
+content_filter:
+  media_only: true
+  allow_photo: true
+  allow_video: true
+```
+
+启用后，纯文本、群员聊天、网页预览、投票、表情和系统消息都会被过滤，不会发送到目标群。
+
 ## 搬运记录群
 
 可以指定一个或多个 Telegram 群组接收每次投递的文字记录。Userbot 必须先加入私有群，或者使用 `--join`：

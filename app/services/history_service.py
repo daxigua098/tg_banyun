@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from telethon import TelegramClient
 
 from app.config import AppConfig
+from app.core.content_filter import should_transfer_message
 from app.core.transfer import SequentialTransferService
 from app.models import Source
 
@@ -91,6 +92,15 @@ class HistorySyncService:
                     if getattr(message, "action", None) is not None:
                         logger.debug(
                             "Skipping Telegram service message source={} message={}",
+                            source_id,
+                            message_id,
+                        )
+                        await self._advance_watermark(source_id, message_id)
+                        continue
+
+                    if not should_transfer_message(message, self.config.content_filter):
+                        logger.debug(
+                            "Skipping non-media message source={} message={}",
                             source_id,
                             message_id,
                         )

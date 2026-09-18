@@ -97,6 +97,14 @@ class HistoryConfig(BaseModel):
     skip_pinned: bool = True
 
 
+class ContentFilterConfig(BaseModel):
+    """Content-type filtering applied before message delivery."""
+
+    media_only: bool = False
+    allow_photo: bool = True
+    allow_video: bool = True
+
+
 class LoggingConfig(BaseModel):
     """Logging settings."""
 
@@ -113,6 +121,7 @@ class AppConfig(BaseModel):
     management_bot: ManagementBotConfig = Field(default_factory=ManagementBotConfig)
     transfer: TransferConfig = Field(default_factory=TransferConfig)
     history: HistoryConfig = Field(default_factory=HistoryConfig)
+    content_filter: ContentFilterConfig = Field(default_factory=ContentFilterConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
     @property

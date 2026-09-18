@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from telethon import TelegramClient, events
 
 from app.config import AppConfig
+from app.core.content_filter import should_transfer_message
 from app.core.transfer import SequentialTransferService
 from app.models import Source
 from app.services.history_service import HistorySyncService
@@ -88,6 +89,8 @@ class RuntimeService:
     async def _on_new_message(self, event: events.NewMessage.Event) -> None:
         chat_id = event.chat_id
         if chat_id is None:
+            return
+        if not should_transfer_message(event.message, self.config.content_filter):
             return
         async with self.session_factory() as session:
             source_id = await session.scalar(
