@@ -16,7 +16,7 @@ from app.config import AppConfig, ManagementBotConfig, TransferConfig
 from app.core.transfer import SequentialTransferService
 from app.models import Base, DeliveryJob, Route, Source, Target
 from app.services import management_command_service as command_module
-from app.services.management_bot_service import ManagementBotService
+from app.services.management_bot_service import BOT_COMMANDS, ManagementBotService
 from app.services.management_command_service import ManagementCommandService
 
 
@@ -147,3 +147,10 @@ async def test_management_bot_enforces_admin_permissions(monkeypatch) -> None:
 
     await engine.dispose()
 
+
+
+def test_management_bot_command_menu_is_chinese() -> None:
+    descriptions = {command.command: command.description for command in BOT_COMMANDS}
+    assert descriptions["status"] == "查看运行状态"
+    assert descriptions["pause"] == "暂停搬运"
+    assert descriptions["retry_failed"] == "重试失败任务"
