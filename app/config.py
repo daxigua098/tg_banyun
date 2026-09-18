@@ -1,0 +1,124 @@
+"""Application configuration loading and validation."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Literal
+
+import yaml
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field, field_validator
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "config.yaml"
+
+
+class AppMetaConfig(BaseModel):
+    """General application metadata."""
+
+    name: str = "tg-mirror-bot"
+    environment: str = "development"
+    timezone: str = "Asia/Shanghai"
+
+
+class DatabaseConfig(BaseModel):
+    """Database connection settings."""
+
+    url: str = "sqlite+aiosqlite:///./data/app.db"
+    echo: bool = False
+
+
+class TelegramConfig(BaseModel):
+    """Telegram userbot settings."""
+
+    api_id: int = 0
+    api_hash: str = ""
+    phone: str = ""
+    session_name: str = "data/sessions/default"
+    proxy: str | None = None
+
+    def validate_credentials(self) -> None:
+        """Raise a readable error when Telegram credentials are incomplete."""
+        if not self.api_id or not self.api_hash or not self.phone:
+            raise ValueError(
+                "Telegram credentials are incomplete. Configure TG_API_ID, "
+                "TG_API_HASH and TG_PHONE in .env."
+            )
+
+
+class TransferConfig(BaseModel):
+    """Message transfer behavior."""
+
+    mode: Literal["copy", "forward"] = "copy"
+    sequential: bool = True
+    delay_seconds: float = Field(default=1.0, ge=0)
+    max_attempts: int = Field(default=5, ge=1)
+    retry_base_seconds: int = Field(default=5, ge=1)
+    worker_concurrency: int = Field(default=1, ge=1, le=1)
+
+    @field_validator("sequential")
+    @classmethod
+    def require_sequential(cls, value: bool) -> bool:
+        """The MVP deliberately supports one globally sequential worker."""
+        if not value:
+            raise ValueError("MVP requires transfer.sequential=true")
+        return value
+
+
+class HistoryConfig(BaseModel):
+    """Historical message synchronization behavior."""
+
+    enabled: bool = True
+    default_limit: int = Field(default=500, ge=1)
+    order: Literal["old_to_new", "new_to_old"] = "old_to_new"
+    skip_pinned: bool = True
+
+
+class LoggingConfig(BaseModel):
+    """Logging settings."""
+
+    level: str = "INFO"
+    file: str = "logs/app.log"
+
+
+class AppConfig(BaseModel):
+    """Root application configuration."""
+
+    app: AppMetaConfig = Field(default_factory=AppMetaConfig)
+    database: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
+    transfer: TransferConfig = Field(default_factory=TransferConfig)
+    history: HistoryConfig = Field(default_factory=HistoryConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
+
+    @property
+    def project_root(self) -> Path:
+        """Return the repository root."""
+        return PROJECT_ROOT
+
+
+def _resolve_config_path(config_path: str | Path | None) -> Path:
+    path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return path
+
+
+def load_config(config_path: str | Path | None = None) -> AppConfig:
+    """Load YAML configuration and overlay secrets from environment variables."""
+    load_dotenv(PROJECT_ROOT / ".env")
+    path = _resolve_config_path(config_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Configuration file not found: {path}")
+
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    telegram = raw.setdefault("telegram", {})
+    database = raw.setdefault("database", {})
+
+    telegram["api_id"] = int(os.getenv("TG_API_ID", telegram.get("api_id", 0)) or 0)
+    telegram["api_hash"] = os.getenv("TG_API_HASH", telegram.get("api_hash", ""))
+    telegram["phone"] = os.getenv("TG_PHONE", telegram.get("phone", ""))
+    database["url"] = os.getenv("DATABASE_URL", database.get("url", "sqlite+aiosqlite:///./data/app.db"))
+
+    return AppConfig.model_validate(raw)

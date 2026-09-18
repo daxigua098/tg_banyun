@@ -1,0 +1,34 @@
+app:
+  name: tg-mirror-bot
+  environment: development
+  timezone: Asia/Shanghai
+
+database:
+  url: sqlite+aiosqlite:///./data/app.db
+  echo: false
+
+telegram:
+  api_id: 0
+  api_hash: ""
+  phone: ""
+  session_name: data/sessions/default
+  proxy: null
+
+transfer:
+  mode: copy
+  sequential: true
+  delay_seconds: 1.0
+  max_attempts: 5
+  retry_base_seconds: 5
+  # This is the only worker count supported by the MVP.
+  worker_concurrency: 1
+
+history:
+  enabled: true
+  default_limit: 500
+  order: old_to_new
+  skip_pinned: true
+
+logging:
+  level: INFO
+  file: logs/app.log
