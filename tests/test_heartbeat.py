@@ -45,3 +45,15 @@ def test_process_running_treats_permission_error_as_alive(monkeypatch) -> None:
     assert is_process_running(12345) is True
 
 
+
+def test_heartbeat_resets_started_at_for_new_pid(tmp_path) -> None:
+    path = tmp_path / "runtime_status.json"
+    path.write_text(
+        '{"status":"running","pid":999,"started_at":"2000-01-01T00:00:00+00:00"}',
+        encoding="utf-8",
+    )
+
+    payload = HeartbeatWriter(path).write(status="running")
+
+    assert payload["pid"] == os.getpid()
+    assert payload["started_at"] != "2000-01-01T00:00:00+00:00"

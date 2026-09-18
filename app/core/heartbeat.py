@@ -62,12 +62,16 @@ class HeartbeatWriter:
     def write(self, *, status: str, **extra: Any) -> dict[str, Any]:
         """Persist one heartbeat and return the written payload."""
         now = datetime.now(UTC).isoformat(timespec="seconds")
+        current_pid = os.getpid()
         existing = read_runtime_status(self.path) or {}
+        if status == "running" and existing.get("pid") != current_pid:
+            existing.pop("started_at", None)
+            existing.pop("stopped_at", None)
         payload = {
             **existing,
             **extra,
             "status": status,
-            "pid": os.getpid(),
+            "pid": current_pid,
             "heartbeat_at": now,
         }
         if status == "running" and not payload.get("started_at"):
@@ -85,3 +89,4 @@ class HeartbeatWriter:
         except OSError:
             logger.exception("Failed to write runtime heartbeat: {}", self.path)
         return payload
+
