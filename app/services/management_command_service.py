@@ -206,6 +206,7 @@ class ManagementCommandService:
             "TG-Mirror-Bot 状态",
             f"运行状态：{runtime_state}",
             f"搬运状态：{'已暂停' if paused else '运行中'}",
+            f"最近备份：{(heartbeat or {}).get('last_backup_at') or '未记录'}",
             f"Userbot：{'已连接' if connected else '未连接'}",
             f"源：总 {source_total} / 启用 {source_enabled}",
             f"目标：总 {target_total} / 启用 {target_enabled}",
@@ -517,8 +518,3 @@ def truncate_response(text: str, limit: int = 3800) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
-
-
-
-
-

@@ -40,6 +40,12 @@ content_filter:
   allow_photo: true
   allow_video: true
 
+backup:
+  enabled: true
+  interval_hours: 24
+  retention_count: 7
+  directory: backups
+
 logging:
   level: INFO
   file: logs/app.log

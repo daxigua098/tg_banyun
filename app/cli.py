@@ -448,6 +448,7 @@ async def command_status(args: argparse.Namespace) -> None:
         print(f"Started at: {heartbeat.get('started_at')}")
         print(f"Heartbeat at: {heartbeat.get('heartbeat_at')}")
         print(f"Queue size: {heartbeat.get('queue_size', 0)}")
+        print(f"Last backup: {heartbeat.get('last_backup_at') or 'not recorded'}")
     print(f"Sources: {source_total}")
     print(f"Targets: {target_total}")
     print(f"Routes: {route_total}")

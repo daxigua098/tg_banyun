@@ -7,8 +7,10 @@ import shutil
 import sqlite3
 import tempfile
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
+
+from loguru import logger
 
 PROJECT_FILES = (
     ".env",
@@ -116,6 +118,51 @@ def create_backup(project_root: Path, output_dir: Path | None = None) -> Path:
         )
 
     return archive_path
+
+
+def list_backups(directory: Path) -> list[Path]:
+    """Return backup archives ordered from newest to oldest."""
+    if not directory.exists():
+        return []
+    return sorted(
+        directory.glob("tg-mirror-bot-*.zip"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+
+def latest_backup(directory: Path) -> Path | None:
+    """Return the newest backup archive when one exists."""
+    backups = list_backups(directory)
+    return backups[0] if backups else None
+
+
+def is_backup_due(
+    directory: Path,
+    interval_hours: int,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Return whether an automatic backup should run."""
+    latest = latest_backup(directory)
+    if latest is None:
+        return True
+    now = now or datetime.now(UTC)
+    modified = datetime.fromtimestamp(latest.stat().st_mtime, tz=UTC)
+    return now - modified >= timedelta(hours=interval_hours)
+
+
+def prune_backups(directory: Path, retention_count: int) -> int:
+    """Delete old backup archives while keeping the newest retention_count files."""
+    backups = list_backups(directory)
+    removed = 0
+    for archive in backups[retention_count:]:
+        try:
+            archive.unlink()
+            removed += 1
+        except OSError:
+            logger.exception("Failed to remove old backup: {}", archive)
+    return removed
 
 
 def _validate_archive_member(name: str) -> None:

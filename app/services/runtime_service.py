@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+from datetime import UTC, datetime
+from pathlib import Path
 
 from loguru import logger
 from sqlalchemy import func, select
@@ -17,6 +19,12 @@ from app.core.message_batch import MessageBatch
 from app.core.runtime_control import is_runtime_paused
 from app.core.transfer import SequentialTransferService
 from app.models import Route, Source, Target
+from app.services.backup_service import (
+    create_backup,
+    is_backup_due,
+    latest_backup,
+    prune_backups,
+)
 from app.services.history_service import HistorySyncService
 
 
@@ -45,6 +53,11 @@ class RuntimeService:
         self.queue: asyncio.Queue[tuple[int, MessageBatch] | None] = asyncio.Queue()
         self.heartbeat = HeartbeatWriter(config.project_root / "data" / "runtime_status.json")
         self.control_path = config.project_root / "data" / "runtime_control.json"
+        backup_dir = Path(config.backup.directory)
+        if not backup_dir.is_absolute():
+            backup_dir = config.project_root / backup_dir
+        self.backup_dir = backup_dir
+        self.last_backup_at: str | None = None
         self._new_message_filter = events.NewMessage(
             incoming=True,
             func=self._is_non_album,
@@ -68,6 +81,10 @@ class RuntimeService:
             self._heartbeat_loop(),
             name="runtime-heartbeat",
         )
+        backup_task = asyncio.create_task(
+            self._backup_loop(),
+            name="automatic-backup",
+        )
 
         try:
             if not is_runtime_paused(self.control_path):
@@ -82,8 +99,11 @@ class RuntimeService:
             await self.client.run_until_disconnected()
         finally:
             heartbeat_task.cancel()
+            backup_task.cancel()
             with suppress(asyncio.CancelledError):
                 await heartbeat_task
+            with suppress(asyncio.CancelledError):
+                await backup_task
             if worker is not None:
                 await self.queue.put(None)
                 worker.cancel()
@@ -121,6 +141,44 @@ class RuntimeService:
             route_count=route_count,
             queue_size=self.queue.qsize(),
             paused=is_runtime_paused(self.control_path),
+            last_backup_at=self.last_backup_at,
+        )
+
+    async def _backup_loop(self) -> None:
+        while True:
+            await self._run_backup_if_due()
+            await asyncio.sleep(300)
+
+    async def _run_backup_if_due(self) -> None:
+        if not self.config.backup.enabled:
+            return
+        if not is_backup_due(self.backup_dir, self.config.backup.interval_hours):
+            latest = latest_backup(self.backup_dir)
+            if latest is not None:
+                self.last_backup_at = datetime.fromtimestamp(
+                    latest.stat().st_mtime,
+                    tz=UTC,
+                ).isoformat(timespec="seconds")
+            return
+
+        archive = await asyncio.to_thread(
+            create_backup,
+            self.config.project_root,
+            self.backup_dir,
+        )
+        removed = await asyncio.to_thread(
+            prune_backups,
+            self.backup_dir,
+            self.config.backup.retention_count,
+        )
+        self.last_backup_at = datetime.fromtimestamp(
+            archive.stat().st_mtime,
+            tz=UTC,
+        ).isoformat(timespec="seconds")
+        logger.info(
+            "Automatic backup created={} removed_old={}",
+            archive,
+            removed,
         )
 
     async def _sync_history_sequentially(self) -> None:
@@ -202,6 +260,3 @@ class RuntimeService:
                     await self.transfer.process_pending()
             finally:
                 self.queue.task_done()
-
-
-

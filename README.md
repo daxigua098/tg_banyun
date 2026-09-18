@@ -143,7 +143,17 @@ python main.py stats
 
 ## 备份与恢复
 
-创建备份：
+后台服务默认每 24 小时自动备份一次，并保留最近 7 份。可在 `configs/config.yaml` 中调整：
+
+```yaml
+backup:
+  enabled: true
+  interval_hours: 24
+  retention_count: 7
+  directory: backups
+```
+
+也可以随时手动创建备份：
 
 ```powershell
 python main.py backup
@@ -291,5 +301,3 @@ python main.py bot
 - 投递语义是至少一次；进程在发送成功但提交数据库前崩溃时，重启后可能重复发送。
 - 管理 Bot 当前是文本命令界面，没有 Inline Keyboard 和审核流程。
 - 不能绕过 Telegram 或目标频道的权限限制。
-
-

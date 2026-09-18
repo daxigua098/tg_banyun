@@ -105,6 +105,15 @@ class ContentFilterConfig(BaseModel):
     allow_video: bool = True
 
 
+class BackupConfig(BaseModel):
+    """Automatic backup scheduling and retention."""
+
+    enabled: bool = True
+    interval_hours: int = Field(default=24, ge=1)
+    retention_count: int = Field(default=7, ge=1)
+    directory: str = "backups"
+
+
 class LoggingConfig(BaseModel):
     """Logging settings."""
 
@@ -122,6 +131,7 @@ class AppConfig(BaseModel):
     transfer: TransferConfig = Field(default_factory=TransferConfig)
     history: HistoryConfig = Field(default_factory=HistoryConfig)
     content_filter: ContentFilterConfig = Field(default_factory=ContentFilterConfig)
+    backup: BackupConfig = Field(default_factory=BackupConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
     @property

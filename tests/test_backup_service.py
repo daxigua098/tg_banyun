@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from app.services.backup_service import BackupError, create_backup, restore_backup
+from app.services.backup_service import (
+    BackupError,
+    create_backup,
+    is_backup_due,
+    prune_backups,
+    restore_backup,
+)
 
 
 def _build_project(root: Path) -> None:
@@ -68,3 +76,28 @@ def test_restore_rejects_path_traversal(tmp_path) -> None:
 
     with pytest.raises(BackupError, match="Unsafe path"):
         restore_backup(root, archive, yes=True)
+
+
+def test_backup_due_and_retention(tmp_path) -> None:
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    assert is_backup_due(backup_dir, 24) is True
+
+    now = datetime.now(UTC)
+    for index in range(8):
+        archive = backup_dir / f"tg-mirror-bot-{index}.zip"
+        archive.write_bytes(b"backup")
+        timestamp = (now - timedelta(hours=index + 1)).timestamp()
+        os.utime(archive, (timestamp, timestamp))
+
+    assert is_backup_due(backup_dir, 24, now=now) is False
+
+    for index in range(8):
+        archive = backup_dir / f"tg-mirror-bot-{index}.zip"
+        timestamp = (now - timedelta(hours=30 + index)).timestamp()
+        os.utime(archive, (timestamp, timestamp))
+    assert is_backup_due(backup_dir, 24, now=now) is True
+
+    removed = prune_backups(backup_dir, 3)
+    assert removed == 5
+    assert len(list(backup_dir.glob("tg-mirror-bot-*.zip"))) == 3
