@@ -123,6 +123,14 @@ class AlertConfig(BaseModel):
     notify_on_backup: bool = True
 
 
+class WebConfig(BaseModel):
+    """FastAPI management API settings."""
+
+    host: str = "127.0.0.1"
+    port: int = Field(default=8000, ge=1, le=65535)
+    api_token: str = ""
+
+
 class LoggingConfig(BaseModel):
     """Logging settings."""
 
@@ -142,6 +150,7 @@ class AppConfig(BaseModel):
     content_filter: ContentFilterConfig = Field(default_factory=ContentFilterConfig)
     backup: BackupConfig = Field(default_factory=BackupConfig)
     alerts: AlertConfig = Field(default_factory=AlertConfig)
+    web: WebConfig = Field(default_factory=WebConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
     @property
@@ -174,6 +183,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     telegram = raw.setdefault("telegram", {})
     database = raw.setdefault("database", {})
     management_bot = raw.setdefault("management_bot", {})
+    web = raw.setdefault("web", {})
 
     telegram["api_id"] = int(os.getenv("TG_API_ID", telegram.get("api_id", 0)) or 0)
     telegram["api_hash"] = os.getenv("TG_API_HASH", telegram.get("api_hash", ""))
@@ -193,6 +203,6 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     )
     if os.getenv("TG_ADMIN_IDS"):
         management_bot["admin_user_ids"] = _parse_admin_ids(os.environ["TG_ADMIN_IDS"])
+    web["api_token"] = os.getenv("ADMIN_API_TOKEN", web.get("api_token", ""))
 
     return AppConfig.model_validate(raw)
-

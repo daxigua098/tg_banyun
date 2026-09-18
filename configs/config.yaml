@@ -52,7 +52,11 @@ alerts:
   notify_on_failure: true
   notify_on_backup: true
 
+web:
+  host: 127.0.0.1
+  port: 8000
+  api_token: ""
+
 logging:
   level: INFO
   file: logs/app.log
-

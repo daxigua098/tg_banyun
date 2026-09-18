@@ -408,6 +408,18 @@ async def command_resume(args: argparse.Namespace) -> None:
     print("Runtime resumed.")
 
 
+async def command_api(args: argparse.Namespace) -> None:
+    config = load_config(args.config)
+    import uvicorn
+
+    uvicorn.run(
+        "app.api.main:app",
+        host=config.web.host,
+        port=config.web.port,
+        reload=False,
+    )
+
+
 async def command_backup(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     archive = create_backup(config.project_root, output_dir=args.output)
@@ -551,6 +563,7 @@ def build_parser() -> argparse.ArgumentParser:
     restore.add_argument("--yes", action="store_true", help="Confirm overwrite")
     subparsers.add_parser("pause", help="Pause delivery processing")
     subparsers.add_parser("resume", help="Resume delivery processing")
+    subparsers.add_parser("api", help="Run the FastAPI management API")
     subparsers.add_parser("status", help="Show runtime and database status")
     subparsers.add_parser("stats", help="Show delivery statistics")
     return parser
@@ -595,6 +608,8 @@ async def _dispatch(args: argparse.Namespace) -> None:
         await command_pause(args)
     elif args.command == "resume":
         await command_resume(args)
+    elif args.command == "api":
+        await command_api(args)
     elif args.command == "status":
         await command_status(args)
     elif args.command == "backup":
@@ -625,5 +640,3 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - CLI should show a concise error
         print(f"Error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
-
-
