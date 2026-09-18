@@ -10,10 +10,15 @@ if (-not (Test-Path -LiteralPath $PidFile)) {
 $processId = [int](Get-Content -Raw -LiteralPath $PidFile)
 $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
 if ($process) {
-    Stop-Process -Id $processId -Force
-    Write-Output "Stopped PID $processId"
+    & taskkill.exe /PID $processId /T /F | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to stop PID $processId. Try running this script as administrator."
+    }
+    Write-Output "Stopped PID $processId and child processes"
 } else {
     Write-Output "Process $processId is not running."
 }
 
 Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
+
+
