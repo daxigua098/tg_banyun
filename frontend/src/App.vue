@@ -310,6 +310,7 @@ import {
   enqueueAddTarget,
   enqueueSync,
   createUser,
+  getAuditLogs,
   getControlCommands,
   getLoginHistory,
   getUsers,
