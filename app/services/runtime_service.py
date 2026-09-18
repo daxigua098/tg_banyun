@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 from sqlalchemy import func, select
@@ -19,16 +21,23 @@ from app.core.message_batch import MessageBatch
 from app.core.runtime_control import is_runtime_paused
 from app.core.sender_filter import is_admin_or_channel_post
 from app.core.transfer import SequentialTransferService
-from app.models import Route, Source, Target
+from app.models import ControlCommand, Route, Source, Target
 from app.services.backup_service import (
     create_backup,
     is_backup_due,
     latest_backup,
     prune_backups,
 )
+from app.services.control_command_service import (
+    COMMAND_ADD_SOURCE,
+    COMMAND_ADD_TARGET,
+    COMMAND_SYNC,
+    load_command_payload,
+)
 from app.services.history_service import HistorySyncService
 from app.services.notifier_service import AdminNotifier
 from app.services.rule_service import get_source_rule
+from app.services.source_service import add_source, add_target
 
 
 class RuntimeService:
@@ -265,6 +274,74 @@ class RuntimeService:
             return await is_admin_or_channel_post(self.client, entity, message)
         return True
 
+    async def _process_control_command_once(self) -> bool:
+        async with self.session_factory() as session:
+            command = await session.scalar(
+                select(ControlCommand)
+                .where(ControlCommand.status == "pending")
+                .order_by(ControlCommand.id.asc())
+                .limit(1)
+            )
+            if command is None:
+                return False
+            command.status = "processing"
+            await session.commit()
+
+        try:
+            result = await self._execute_control_command(command)
+            async with self.session_factory() as session:
+                current = await session.get(ControlCommand, command.id)
+                if current is not None:
+                    current.status = "success"
+                    current.result = json.dumps(result, ensure_ascii=False)
+                    current.error = None
+                    current.processed_at = datetime.now(UTC)
+                    await session.commit()
+            logger.info("Control command completed id={} type={}", command.id, command.command_type)
+        except Exception as exc:  # noqa: BLE001 - command failures must not stop runtime
+            async with self.session_factory() as session:
+                current = await session.get(ControlCommand, command.id)
+                if current is not None:
+                    current.status = "failed"
+                    current.error = f"{type(exc).__name__}: {exc}"[:2000]
+                    current.processed_at = datetime.now(UTC)
+                    await session.commit()
+            logger.exception("Control command failed id={}", command.id)
+        return True
+
+    async def _execute_control_command(self, command: ControlCommand) -> dict[str, Any]:
+        payload = load_command_payload(command)
+        if command.command_type == COMMAND_ADD_SOURCE:
+            async with self.operation_lock:
+                async with self.session_factory() as session:
+                    source = await add_source(
+                        session,
+                        self.client,
+                        str(payload.get("input", "")),
+                        join=bool(payload.get("join", False)),
+                    )
+            return {"source_id": source.id, "title": source.title}
+        if command.command_type == COMMAND_ADD_TARGET:
+            async with self.operation_lock:
+                async with self.session_factory() as session:
+                    target = await add_target(
+                        session,
+                        self.client,
+                        str(payload.get("input", "")),
+                    )
+            return {"target_id": target.id, "title": target.title}
+        if command.command_type == COMMAND_SYNC:
+            source_value = payload.get("source_id", "all")
+            limit = int(payload.get("limit") or self.config.history.default_limit)
+            if source_value == "all":
+                results = await self.history.sync_all(limit=limit)
+                return {"results": results}
+            inspected = await self.history.sync_source(int(source_value), limit=limit)
+            if not is_runtime_paused(self.control_path):
+                await self.transfer.process_pending()
+            return {"source_id": int(source_value), "inspected": inspected}
+        raise ValueError(f"不支持的控制命令：{command.command_type}")
+
     async def _consume_queue(self) -> None:
         while True:
             try:
@@ -291,6 +368,3 @@ class RuntimeService:
                     await self.transfer.process_pending()
             finally:
                 self.queue.task_done()
-
-
-

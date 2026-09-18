@@ -19,6 +19,13 @@ from app.core.heartbeat import is_process_running, read_runtime_status
 from app.core.runtime_control import is_runtime_paused, set_runtime_paused
 from app.database import dispose_database, get_session_factory, init_database
 from app.models import DeliveryJob, Route, Source, Target
+from app.services.control_command_service import (
+    COMMAND_ADD_SOURCE,
+    COMMAND_ADD_TARGET,
+    COMMAND_SYNC,
+    enqueue_control_command,
+    list_control_commands,
+)
 from app.services.rule_service import (
     list_source_rules,
     load_keywords,
@@ -45,6 +52,20 @@ class EnabledUpdate(BaseModel):
 class RouteCreate(BaseModel):
     source_id: int = Field(gt=0)
     target_id: int = Field(gt=0)
+
+
+class AddSourceCommand(BaseModel):
+    input: str
+    join: bool = False
+
+
+class AddTargetCommand(BaseModel):
+    input: str
+
+
+class SyncCommand(BaseModel):
+    source_id: int | str
+    limit: int = Field(default=100, ge=1, le=5000)
 
 
 class RuleUpdate(BaseModel):
@@ -325,6 +346,67 @@ def create_app() -> FastAPI:
         config: AppConfig = app.state.config
         set_runtime_paused(config.project_root / "data" / "runtime_control.json", False)
         return {"paused": False}
+
+    @app.post("/api/control/add-source", dependencies=[Depends(require_auth)])
+    async def command_add_source(
+        payload: AddSourceCommand,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        command = await enqueue_control_command(
+            session,
+            COMMAND_ADD_SOURCE,
+            {"input": payload.input, "join": payload.join},
+        )
+        return {"id": command.id, "status": command.status}
+
+    @app.post("/api/control/add-target", dependencies=[Depends(require_auth)])
+    async def command_add_target(
+        payload: AddTargetCommand,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        command = await enqueue_control_command(
+            session,
+            COMMAND_ADD_TARGET,
+            {"input": payload.input},
+        )
+        return {"id": command.id, "status": command.status}
+
+    @app.post("/api/control/sync", dependencies=[Depends(require_auth)])
+    async def command_sync(
+        payload: SyncCommand,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        source_value: int | str = payload.source_id
+        if isinstance(source_value, str) and source_value != "all":
+            try:
+                source_value = int(source_value)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="source_id 必须是数字或 all") from exc
+        command = await enqueue_control_command(
+            session,
+            COMMAND_SYNC,
+            {"source_id": source_value, "limit": payload.limit},
+        )
+        return {"id": command.id, "status": command.status}
+
+    @app.get("/api/control/commands", dependencies=[Depends(require_auth)])
+    async def control_commands(
+        limit: int = Query(default=50, ge=1, le=500),
+        session: AsyncSession = Depends(session_dependency),
+    ) -> list[dict[str, Any]]:
+        rows = await list_control_commands(session, limit=limit)
+        return [
+            {
+                "id": item.id,
+                "command_type": item.command_type,
+                "status": item.status,
+                "result": item.result,
+                "error": item.error,
+                "created_at": item.created_at,
+                "processed_at": item.processed_at,
+            }
+            for item in rows
+        ]
 
     @app.post("/api/retry-failed", dependencies=[Depends(require_auth)])
     async def retry_failed(

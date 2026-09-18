@@ -12,6 +12,7 @@
         <el-menu-item index="routes">路由关系</el-menu-item>
         <el-menu-item index="rules">过滤规则</el-menu-item>
         <el-menu-item index="jobs">投递任务</el-menu-item>
+        <el-menu-item index="commands">控制命令</el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -110,6 +111,46 @@
           </el-table>
         </el-card>
 
+        <section v-else-if="activePage === 'commands'">
+          <el-card class="command-card">
+            <template #header>添加搬运源</template>
+            <div class="command-row">
+              <el-input v-model="commandForm.source" placeholder="频道链接、@用户名或私有邀请链接" />
+              <el-checkbox v-model="commandForm.join">允许加入</el-checkbox>
+              <el-button type="primary" @click="queueAddSource">提交</el-button>
+            </div>
+          </el-card>
+          <el-card class="command-card">
+            <template #header>添加接收目标</template>
+            <div class="command-row">
+              <el-input v-model="commandForm.target" placeholder="Telegram 频道或群组链接" />
+              <el-button type="primary" @click="queueAddTarget">提交</el-button>
+            </div>
+          </el-card>
+          <el-card class="command-card">
+            <template #header>同步历史消息</template>
+            <div class="command-row">
+              <el-select v-model="commandForm.syncSource" placeholder="选择源或全部" style="width: 220px">
+                <el-option label="全部源" value="all" />
+                <el-option v-for="source in sources" :key="source.id" :label="`${source.id} - ${source.title}`" :value="source.id" />
+              </el-select>
+              <el-input-number v-model="commandForm.syncLimit" :min="1" :max="5000" />
+              <el-button type="primary" @click="queueSync">提交</el-button>
+            </div>
+          </el-card>
+          <el-card>
+            <template #header>最近控制命令</template>
+            <el-table :data="commands" stripe>
+              <el-table-column prop="id" label="ID" width="80" />
+              <el-table-column prop="command_type" label="命令" width="140" />
+              <el-table-column prop="status" label="状态" width="110" />
+              <el-table-column prop="result" label="结果" min-width="220" show-overflow-tooltip />
+              <el-table-column prop="error" label="错误" min-width="220" show-overflow-tooltip />
+              <el-table-column prop="created_at" label="创建时间" min-width="180" />
+            </el-table>
+          </el-card>
+        </section>
+
         <el-card v-else-if="activePage === 'jobs'">
           <div class="filters">
             <el-select v-model="jobStatus" placeholder="全部状态" clearable style="width: 180px" @change="loadJobs">
@@ -162,6 +203,10 @@ import { ElMessage } from 'element-plus'
 import {
   createRoute,
   deleteRoute,
+  enqueueAddSource,
+  enqueueAddTarget,
+  enqueueSync,
+  getControlCommands,
   getJobs,
   getRoutes,
   getRules,
@@ -188,6 +233,8 @@ const loading = ref(false)
 const lastRefresh = ref('')
 const chartElement = ref(null)
 const newRoute = ref({ source_id: null, target_id: null })
+const commands = ref([])
+const commandForm = ref({ source: '', target: '', join: false, syncSource: 'all', syncLimit: 100 })
 const ruleDialog = ref(false)
 const ruleForm = ref({})
 let chart = null
@@ -221,14 +268,15 @@ function renderChart() {
 async function refreshAll() {
   loading.value = true
   try {
-    const [statusData, sourceData, targetData, routeData, ruleData] = await Promise.all([
-      getStatus(), getSources(), getTargets(), getRoutes(), getRules(),
+    const [statusData, sourceData, targetData, routeData, ruleData, commandData] = await Promise.all([
+      getStatus(), getSources(), getTargets(), getRoutes(), getRules(), getControlCommands(),
     ])
     status.value = statusData
     sources.value = sourceData
     targets.value = targetData
     routes.value = routeData
     rules.value = ruleData
+    commands.value = commandData
     await loadJobs()
     lastRefresh.value = new Date().toLocaleString()
     await nextTick()
@@ -327,6 +375,28 @@ async function saveRule() {
   })
   ruleDialog.value = false
   ElMessage.success('过滤规则已保存')
+  await refreshAll()
+}
+
+async function queueAddSource() {
+  if (!commandForm.value.source) return ElMessage.warning('请输入源链接')
+  await enqueueAddSource(commandForm.value.source, commandForm.value.join)
+  ElMessage.success('添加源命令已进入队列')
+  commandForm.value.source = ''
+  await refreshAll()
+}
+
+async function queueAddTarget() {
+  if (!commandForm.value.target) return ElMessage.warning('请输入目标链接')
+  await enqueueAddTarget(commandForm.value.target)
+  ElMessage.success('添加目标命令已进入队列')
+  commandForm.value.target = ''
+  await refreshAll()
+}
+
+async function queueSync() {
+  await enqueueSync(commandForm.value.syncSource, commandForm.value.syncLimit)
+  ElMessage.success('同步命令已进入队列')
   await refreshAll()
 }
 

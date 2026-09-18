@@ -14,3 +14,10 @@ def test_api_health_and_sources() -> None:
     assert health.json()["status"] == "ok"
     assert sources.status_code == 200
     assert isinstance(sources.json(), list)
+
+def test_control_command_list() -> None:
+    with TestClient(create_app()) as client:
+        response = client.get("/api/control/commands")
+
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)

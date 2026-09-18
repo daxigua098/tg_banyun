@@ -204,3 +204,19 @@ class SourceRule(TimestampMixin, Base):
     admin_only: Mapped[bool] = mapped_column(Boolean, default=False)
 
     source: Mapped[Source] = relationship()
+
+class ControlCommand(TimestampMixin, Base):
+    """Durable command executed by the single runtime process."""
+
+    __tablename__ = "control_commands"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    command_type: Mapped[str] = mapped_column(String(64), index=True)
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )

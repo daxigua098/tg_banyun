@@ -34,3 +34,12 @@ export const deleteRoute = (id) =>
   api.delete(`/api/routes/${id}`).then((response) => response.data)
 export const updateRule = (sourceId, rule) =>
   api.put(`/api/rules/${sourceId}`, rule).then((response) => response.data)
+
+export const getControlCommands = (limit = 50) =>
+  api.get('/api/control/commands', { params: { limit } }).then((response) => response.data)
+export const enqueueAddSource = (input, join = false) =>
+  api.post('/api/control/add-source', { input, join }).then((response) => response.data)
+export const enqueueAddTarget = (input) =>
+  api.post('/api/control/add-target', { input }).then((response) => response.data)
+export const enqueueSync = (sourceId, limit = 100) =>
+  api.post('/api/control/sync', { source_id: sourceId, limit }).then((response) => response.data)
