@@ -92,3 +92,39 @@ def test_viewer_role_cannot_execute_write_actions(monkeypatch) -> None:
 
     assert response.status_code == 403
 
+
+def test_sync_command_includes_fuzzy_keywords(monkeypatch) -> None:
+    config = load_config()
+    config.web.api_token = ""
+    config.web.admin_password = ""
+    config.web.session_secret = ""
+    monkeypatch.setattr(api_main, "load_config", lambda: config)
+
+    captured: dict[str, object] = {}
+
+    class StubCommand:
+        id = 123
+        status = "pending"
+
+    async def fake_enqueue_control_command(session, command_type, payload):
+        captured["session"] = session
+        captured["command_type"] = command_type
+        captured["payload"] = payload
+        return StubCommand()
+
+    monkeypatch.setattr(api_main, "enqueue_control_command", fake_enqueue_control_command)
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/control/sync",
+            json={"source_id": 1, "limit": 30, "keywords": ["AI", "主播"]},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"id": 123, "status": "pending"}
+    assert captured["command_type"] == "sync"
+    assert captured["payload"] == {
+        "source_id": 1,
+        "limit": 30,
+        "keywords": ["AI", "主播"],
+    }

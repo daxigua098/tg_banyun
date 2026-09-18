@@ -150,6 +150,7 @@ class ManualPostCommand(BaseModel):
 class SyncCommand(BaseModel):
     source_id: int | str
     limit: int = Field(default=100, ge=1, le=5000)
+    keywords: list[str] = Field(default_factory=list)
 
 
 class RuleUpdate(BaseModel):
