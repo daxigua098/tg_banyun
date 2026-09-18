@@ -49,7 +49,8 @@ def test_api_token_authentication(monkeypatch) -> None:
 
     assert unauthorized.status_code == 401
     assert authorized.status_code == 200
-    assert authorized.json() == {'authenticated': True}
+    assert authorized.json()['authenticated'] is True
+    assert authorized.json()['role'] == 'super_admin'
 
 def test_api_username_password_login(monkeypatch) -> None:
     config = load_config()
@@ -90,3 +91,4 @@ def test_viewer_role_cannot_execute_write_actions(monkeypatch) -> None:
         )
 
     assert response.status_code == 403
+

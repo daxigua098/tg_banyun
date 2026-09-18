@@ -36,6 +36,11 @@ from app.services.rule_service import (
     load_sender_ids,
     replace_source_rule,
 )
+from app.services.session_service import (
+    create_web_session,
+    is_web_session_valid,
+    revoke_web_session,
+)
 from app.services.user_service import (
     authenticate_web_user,
     create_web_user,
@@ -179,9 +184,19 @@ def create_app() -> FastAPI:
             else ""
         )
         if web.api_token and hmac.compare_digest(supplied, web.api_token):
+            request.state.identity = {"username": "api-token", "role": "super_admin"}
             return
-        if verify_session_token(web, supplied) is not None:
-            return
+        payload = verify_session_token(web, supplied) if supplied else None
+        if payload is not None:
+            factory = get_session_factory()
+            async with factory() as session:
+                valid_session = await is_web_session_valid(session, supplied)
+            if valid_session:
+                request.state.identity = {
+                    "username": str(payload.get("sub")),
+                    "role": str(payload.get("role") or "viewer"),
+                }
+                return
         if not web.api_token and not web.admin_password:
             return
         raise HTTPException(status_code=401, detail="未授权")
@@ -222,6 +237,13 @@ def create_app() -> FastAPI:
         if not valid:
             raise HTTPException(status_code=401, detail="用户名或密码错误")
         token, expires_at = create_session_token(web, username, role=role)
+        await create_web_session(
+            session,
+            token=token,
+            username=username,
+            role=role,
+            expires_at=expires_at,
+        )
         return {
             "token": token,
             "expires_at": expires_at,
@@ -230,8 +252,24 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/auth/check", dependencies=[Depends(require_auth)])
-    async def auth_check() -> dict[str, bool]:
-        return {"authenticated": True}
+    async def auth_check(request: Request) -> dict[str, Any]:
+        identity = getattr(request.state, "identity", {})
+        return {
+            "authenticated": True,
+            "username": identity.get("username"),
+            "role": identity.get("role"),
+        }
+
+    @app.post("/api/auth/logout", dependencies=[Depends(require_auth)])
+    async def logout(
+        request: Request,
+        authorization: str = Header(default=""),
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, bool]:
+        token = authorization.removeprefix("Bearer ").strip()
+        if token:
+            await revoke_web_session(session, token)
+        return {"logged_out": True}
 
     @app.get("/api/status", dependencies=[Depends(require_auth)])
     async def status(session: AsyncSession = Depends(session_dependency)) -> dict[str, Any]:
@@ -634,3 +672,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+

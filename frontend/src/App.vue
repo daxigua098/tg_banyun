@@ -268,6 +268,7 @@ import {
   checkAuth,
   createRoute,
   login as loginRequest,
+  logoutSession,
   deleteRoute,
   enqueueAddSource,
   enqueueAddTarget,
@@ -542,3 +543,4 @@ onMounted(() => {
   if (authenticated.value) refreshAll()
 })
 </script>
+
