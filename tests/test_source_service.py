@@ -68,3 +68,27 @@ async def test_add_target_rejects_unjoined_private_invite(monkeypatch) -> None:
             )
 
     await engine.dispose()
+
+async def test_add_source_joins_private_invite(monkeypatch) -> None:
+    session_factory, engine = await _build_factory()
+    monkeypatch.setattr(
+        source_service,
+        "_entity_info",
+        lambda entity: (888, "Private Source", None, True),
+    )
+
+    class JoinClient(FakeClient):
+        async def __call__(self, request: object) -> SimpleNamespace:
+            return SimpleNamespace(chats=[SimpleNamespace(id=888)])
+
+    async with session_factory() as session:
+        source = await source_service.add_source(
+            session,
+            JoinClient(),
+            "https://t.me/+HpdR8GSmvThlZDc1",
+            join=True,
+        )
+
+    assert source.tg_id == 888
+    assert source.title == "Private Source"
+    await engine.dispose()

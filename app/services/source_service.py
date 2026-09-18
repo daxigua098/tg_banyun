@@ -8,6 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from telethon import TelegramClient, utils
 from telethon.errors import UserAlreadyParticipantError
+from telethon.tl.functions.channels import JoinChannelRequest
+from telethon.tl.functions.messages import ImportChatInviteRequest
 
 from app.core.source_resolver import ResolvedChat, resolve_chat_input
 from app.models import Route, Source, Target
@@ -35,15 +37,18 @@ async def _resolve_entity(
                 "Private invite links require --join so the userbot can join the chat first."
             )
         try:
-            result = await client.join_chat(f"https://t.me/+{invite}")
-            return result if hasattr(result, "id") else await client.get_entity(f"https://t.me/+{invite}")
+            updates = await client(ImportChatInviteRequest(invite))
+            chats = getattr(updates, "chats", None) or []
+            if chats:
+                return chats[0]
+            return await client.get_entity(f"https://t.me/+{invite}")
         except UserAlreadyParticipantError:
             return await client.get_entity(f"https://t.me/+{invite}")
 
     entity = await client.get_entity(resolved.value)
     if join:
         try:
-            await client.join_chat(entity)
+            await client(JoinChannelRequest(entity))
         except UserAlreadyParticipantError:
             pass
     return entity
@@ -119,6 +124,7 @@ async def add_target(
         entity = await _resolve_joined_invite(client, resolved)
     else:
         entity = await client.get_entity(resolved.value)
+
     tg_id, title, username, _ = _entity_info(entity)
     existing = await session.scalar(select(Target).where(Target.tg_id == tg_id))
     if existing is not None:
@@ -181,6 +187,7 @@ async def list_routes(session: AsyncSession) -> list[Route]:
     """List route bindings."""
     result = await session.scalars(select(Route).order_by(Route.source_id.asc(), Route.id.asc()))
     return list(result)
+
 
 async def set_source_enabled(
     session: AsyncSession,
