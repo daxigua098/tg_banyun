@@ -18,7 +18,8 @@ body { background: #f4f6f9; color: #1f2937; font-family: system-ui, "Microsoft Y
 .stat-value { margin-top: 10px; font-size: 24px; font-weight: 700; }
 .chart-card { margin-top: 18px; }
 .chart { height: 360px; }
-.filters { display: flex; gap: 10px; margin-bottom: 16px; }
+.filters { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.filters > div { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 900px) {
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .topbar { height: auto; padding: 14px; flex-direction: column; align-items: flex-start; gap: 12px; }

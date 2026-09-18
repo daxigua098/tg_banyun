@@ -209,3 +209,18 @@ def test_stop_endpoint_requests_runtime_stop_and_cancels_waiting_jobs(monkeypatc
     assert response.json()["cancelled"] == 7
     assert calls["stop"] == (config.project_root / "data" / "runtime_control.json", True)
     assert calls["paused"] == (config.project_root / "data" / "runtime_control.json", True)
+
+
+def test_frontend_index_is_not_cached(monkeypatch) -> None:
+    config = load_config()
+    config.web.api_token = ""
+    config.web.admin_password = ""
+    config.web.session_secret = ""
+    monkeypatch.setattr(api_main, "load_config", lambda: config)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, no-cache, must-revalidate"
+    assert response.headers["pragma"] == "no-cache"

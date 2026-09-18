@@ -229,6 +229,16 @@ def create_app() -> FastAPI:
         return identity["username"] if identity else "anonymous"
 
     @app.middleware("http")
+    async def frontend_cache_headers(request: Request, call_next: Any) -> Any:
+        response = await call_next(request)
+        if request.url.path in {"/", "/index.html"}:
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+        elif request.url.path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+    @app.middleware("http")
     async def audit_middleware(request: Request, call_next: Any) -> Any:
         identity = authenticated_identity(request)
         if identity is not None and request.method in {"POST", "PUT", "PATCH", "DELETE"}:

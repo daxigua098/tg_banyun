@@ -339,7 +339,7 @@
               <div>
                 <el-button type="warning" :disabled="status?.paused || status?.stopped" @click="pause">暂停任务</el-button>
                 <el-button type="success" :disabled="!status?.paused && !status?.stopped" @click="resume">恢复任务</el-button>
-                <el-button type="danger" :disabled="status?.stopped" @click="stopAll">停止全部任务</el-button>
+                <el-button type="danger" size="large" :disabled="status?.stopped" @click="stopAll">停止所有任务</el-button>
                 <el-button @click="loadQueueCommands">立即刷新</el-button>
               </div>
             </div>
