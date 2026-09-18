@@ -355,6 +355,7 @@ class RuntimeService:
             try:
                 item = await asyncio.wait_for(self.queue.get(), timeout=1.0)
             except TimeoutError:
+                await self._process_control_command_once()
                 if not is_runtime_paused(self.control_path):
                     await self.transfer.process_pending()
                 continue
@@ -372,8 +373,8 @@ class RuntimeService:
                             batch.max_message_id,
                         )
                         await session.commit()
+                await self._process_control_command_once()
                 if not is_runtime_paused(self.control_path):
                     await self.transfer.process_pending()
             finally:
                 self.queue.task_done()
-
