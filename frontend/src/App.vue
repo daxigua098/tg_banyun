@@ -43,10 +43,6 @@
         </div>
         <div class="actions">
           <el-button @click="refreshAll">刷新</el-button>
-          <el-button type="warning" :disabled="status?.paused || status?.stopped" @click="pause">暂停</el-button>
-          <el-button type="success" :disabled="!status?.paused && !status?.stopped" @click="resume">恢复</el-button>
-          <el-button type="danger" plain :disabled="status?.stopped" @click="stopAll">停止全部</el-button>
-          <el-button type="danger" plain @click="retry">重试失败</el-button>
           <el-button plain @click="logout">退出登录</el-button>
         </div>
       </el-header>
@@ -554,7 +550,6 @@ import {
   pauseRuntime,
   resumeRuntime,
   stopRuntime,
-  retryFailed,
   setSourceEnabled,
   setTargetEnabled,
   updateUser,
@@ -741,12 +736,6 @@ async function stopAll() {
   )
   const result = await stopRuntime()
   ElMessage.success(`已停止全部任务，取消 ${result.cancelled} 条等待任务`)
-  await refreshAll()
-}
-
-async function retry() {
-  const result = await retryFailed()
-  ElMessage.success(`已重新加入 ${result.retried} 个失败任务`)
   await refreshAll()
 }
 

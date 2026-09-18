@@ -23,7 +23,6 @@ export const getJobs = (status = '', limit = 100) =>
 export const pauseRuntime = () => api.post('/api/pause').then((response) => response.data)
 export const resumeRuntime = () => api.post('/api/resume').then((response) => response.data)
 export const stopRuntime = () => api.post('/api/stop').then((response) => response.data)
-export const retryFailed = () => api.post('/api/retry-failed').then((response) => response.data)
 
 export const setSourceEnabled = (id, enabled) =>
   api.patch(`/api/sources/${id}`, { enabled }).then((response) => response.data)
