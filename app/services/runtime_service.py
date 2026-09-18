@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from telethon import TelegramClient, events
 
 from app.config import AppConfig
-from app.core.content_filter import should_transfer_message
+from app.core.content_filter import should_transfer_for_source
 from app.core.heartbeat import HeartbeatWriter
 from app.core.message_batch import MessageBatch
 from app.core.runtime_control import is_runtime_paused
@@ -27,6 +27,7 @@ from app.services.backup_service import (
 )
 from app.services.history_service import HistorySyncService
 from app.services.notifier_service import AdminNotifier
+from app.services.rule_service import get_source_rule
 
 
 class RuntimeService:
@@ -220,10 +221,8 @@ class RuntimeService:
         chat_id = event.chat_id
         if chat_id is None:
             return
-        if not should_transfer_message(event.message, self.config.content_filter):
-            return
         source_id = await self._source_id_for_chat(int(chat_id))
-        if source_id is not None:
+        if source_id is not None and await self._message_allowed(source_id, event.message):
             batch = MessageBatch.from_messages([event.message])
             await self.queue.put((source_id, batch))
 
@@ -231,15 +230,14 @@ class RuntimeService:
         chat_id = event.chat_id
         if chat_id is None:
             return
-        messages = [
-            message
-            for message in event.messages
-            if should_transfer_message(message, self.config.content_filter)
-        ]
-        if not messages:
-            return
         source_id = await self._source_id_for_chat(int(chat_id))
-        if source_id is not None:
+        if source_id is None:
+            return
+        messages = []
+        for message in event.messages:
+            if await self._message_allowed(source_id, message):
+                messages.append(message)
+        if messages:
             await self.queue.put((source_id, MessageBatch.from_messages(messages)))
 
     async def _source_id_for_chat(self, chat_id: int) -> int | None:
@@ -250,6 +248,11 @@ class RuntimeService:
                     Source.enabled.is_(True),
                 )
             )
+
+    async def _message_allowed(self, source_id: int, message: object) -> bool:
+        async with self.session_factory() as session:
+            rule = await get_source_rule(session, source_id)
+        return should_transfer_for_source(message, self.config.content_filter, rule)
 
     async def _consume_queue(self) -> None:
         while True:
@@ -277,4 +280,3 @@ class RuntimeService:
                     await self.transfer.process_pending()
             finally:
                 self.queue.task_done()
-

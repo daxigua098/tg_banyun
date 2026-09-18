@@ -14,10 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from telethon import TelegramClient
 
 from app.config import AppConfig
-from app.core.content_filter import should_transfer_message
+from app.core.content_filter import should_transfer_for_source
 from app.core.message_batch import MessageBatch
 from app.core.transfer import SequentialTransferService
 from app.models import Source
+from app.services.rule_service import get_source_rule
 
 
 class HistorySyncService:
@@ -73,6 +74,7 @@ class HistorySyncService:
                 raise ValueError(f"Source {source_id} does not exist.")
             entity = source.tg_id or source.raw_input
             watermark = source.last_synced_message_id
+            rule = await get_source_rule(session, source_id)
             source.sync_status = "syncing"
             source.error_message = None
             await session.commit()
@@ -121,7 +123,7 @@ class HistorySyncService:
                         await self._advance_watermark(source_id, message_id)
                         continue
 
-                    if not should_transfer_message(message, self.config.content_filter):
+                    if not should_transfer_for_source(message, self.config.content_filter, rule):
                         logger.debug(
                             "Skipping non-media message source={} message={}",
                             source_id,

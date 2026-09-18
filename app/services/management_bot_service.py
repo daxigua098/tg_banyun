@@ -21,6 +21,9 @@ BOT_COMMANDS = (
     BotCommand("sources", "查看搬运源"),
     BotCommand("targets", "查看接收目标"),
     BotCommand("routes", "查看源到目标路由"),
+    BotCommand("rules", "查看每源过滤规则"),
+    BotCommand("rule", "查看单个源的规则"),
+    BotCommand("rule_set", "修改源的过滤规则"),
     BotCommand("stats", "查看投递统计"),
     BotCommand("jobs", "查看最近投递任务"),
     BotCommand("pause", "暂停搬运"),
@@ -49,6 +52,7 @@ BUTTON_COMMANDS = {
     "status": "/status",
     "stats": "/stats",
     "routes": "/routes",
+    "rules": "/rules",
     "jobs_failed": "/jobs failed 20",
     "retry_failed": "/retry_failed",
     "pause": "/pause",
@@ -113,16 +117,17 @@ class ManagementBotService:
             ],
             [
                 Button.inline("路由关系", b"routes"),
+                Button.inline("过滤规则", b"rules"),
+            ],
+            [
                 Button.inline("失败任务", b"jobs_failed"),
+                Button.inline("重试失败", b"retry_failed"),
             ],
             [
                 Button.inline("暂停搬运", b"pause"),
                 Button.inline("恢复搬运", b"resume"),
             ],
-            [
-                Button.inline("重试失败", b"retry_failed"),
-                Button.inline("使用帮助", b"help"),
-            ],
+            [Button.inline("使用帮助", b"help")],
         ]
 
     @staticmethod
@@ -203,4 +208,3 @@ class ManagementBotService:
             await event.edit(text, buttons=buttons)
         except Exception:  # noqa: BLE001 - old callback messages may not be editable
             await event.respond(text, buttons=buttons)
-

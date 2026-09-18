@@ -183,3 +183,20 @@ class RecordTarget(TimestampMixin, Base):
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+class SourceRule(TimestampMixin, Base):
+    """Per-source content filtering rules."""
+
+    __tablename__ = "source_rules"
+
+    source_id: Mapped[int] = mapped_column(
+        ForeignKey("sources.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    allow_photo: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_video: Mapped[bool] = mapped_column(Boolean, default=True)
+    keyword_whitelist: Mapped[str] = mapped_column(Text, default="[]")
+    keyword_blacklist: Mapped[str] = mapped_column(Text, default="[]")
+    skip_forwarded: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    source: Mapped[Source] = relationship()

@@ -17,6 +17,12 @@ from app.core.transfer import SequentialTransferService
 from app.models import DeliveryJob, Route, Source, Target
 from app.services.history_service import HistorySyncService
 from app.services.record_service import add_record_target, list_record_targets
+from app.services.rule_service import (
+    get_source_rule,
+    list_source_rules,
+    load_keywords,
+    set_source_rule,
+)
 from app.services.source_service import (
     add_route,
     add_source,
@@ -43,6 +49,7 @@ HELP_TEXT = """TG-Mirror-Bot 管理菜单
 /sources  搬运源
 /targets  接收目标
 /routes  路由关系
+/rules  查看每源过滤规则
 
 运行控制
 /pause  暂停搬运
@@ -82,6 +89,12 @@ FULL_HELP_TEXT = """TG-Mirror-Bot 完整菜单
 /target_disable <目标ID> [...]
 /route_add <源ID> <目标ID> [...]
 /route_delete <源ID> <目标ID>
+
+每源过滤规则
+/rules  查看全部规则
+/rule <源ID>  查看单个规则
+/rule_set <源ID> <字段> <值>
+字段：photo on/off、video on/off、whitelist 词1,词2、blacklist 词1,词2、forwarded skip/allow
 
 记录接收群
 /record_add [--join] <群组> [...]
@@ -142,6 +155,12 @@ class ManagementCommandService:
             return await self._records()
         if command == "stats":
             return await self._stats()
+        if command == "rules":
+            return await self._rules()
+        if command == "rule":
+            return await self._rule(args)
+        if command == "rule_set":
+            return await self._rule_set(args)
         if command == "jobs":
             return await self._jobs(args)
         if command == "pause":
@@ -318,6 +337,56 @@ class ManagementCommandService:
             False,
         )
         return "搬运已恢复。"
+
+    async def _rules(self) -> str:
+        async with self.session_factory() as session:
+            rules = await list_source_rules(session)
+        if not rules:
+            return "尚未配置任何源。"
+        lines = ["每源过滤规则"]
+        for source, rule in rules:
+            whitelist = ",".join(load_keywords(rule.keyword_whitelist)) or "-"
+            blacklist = ",".join(load_keywords(rule.keyword_blacklist)) or "-"
+            lines.append(
+                f"源 {source.id} {source.title or source.raw_input}\n"
+                f"图片={'开' if rule.allow_photo else '关'} "
+                f"视频={'开' if rule.allow_video else '关'} "
+                f"转发={'跳过' if rule.skip_forwarded else '允许'}\n"
+                f"白名单={whitelist} 黑名单={blacklist}"
+            )
+        return "\n\n".join(lines)
+
+    async def _rule(self, args: list[str]) -> str:
+        if len(args) != 1:
+            raise ValueError("用法：/rule <源ID>")
+        source_id = self._parse_id(args[0], "源ID")
+        async with self.session_factory() as session:
+            rule = await get_source_rule(session, source_id)
+        return (
+            f"源 {source_id} 过滤规则\n"
+            f"图片：{'开启' if rule.allow_photo else '关闭'}\n"
+            f"视频：{'开启' if rule.allow_video else '关闭'}\n"
+            f"转发消息：{'跳过' if rule.skip_forwarded else '允许'}\n"
+            f"关键词白名单：{','.join(load_keywords(rule.keyword_whitelist)) or '无'}\n"
+            f"关键词黑名单：{','.join(load_keywords(rule.keyword_blacklist)) or '无'}"
+        )
+
+    async def _rule_set(self, args: list[str]) -> str:
+        if len(args) < 3:
+            raise ValueError("用法：/rule_set <源ID> <字段> <值>")
+        source_id = self._parse_id(args[0], "源ID")
+        field = args[1]
+        value = " ".join(args[2:])
+        async with self.session_factory() as session:
+            rule = await set_source_rule(session, source_id, field, value)
+        return (
+            f"源 {source_id} 规则已更新\n"
+            f"图片={'开' if rule.allow_photo else '关'} "
+            f"视频={'开' if rule.allow_video else '关'} "
+            f"转发={'跳过' if rule.skip_forwarded else '允许'}\n"
+            f"白名单={','.join(load_keywords(rule.keyword_whitelist)) or '-'} "
+            f"黑名单={','.join(load_keywords(rule.keyword_blacklist)) or '-'}"
+        )
 
     async def _stats(self) -> str:
         stats = await self.transfer.stats()
