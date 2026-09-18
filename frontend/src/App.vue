@@ -27,6 +27,7 @@
         <el-menu-item index="login_history">登录历史</el-menu-item>
         <el-menu-item v-if="userRole === 'super_admin'" index="users">用户管理</el-menu-item>
         <el-menu-item index="account">账号安全</el-menu-item>
+        <el-menu-item index="additional">内容设置</el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -135,6 +136,18 @@
               <template #default="{ row }"><el-button type="primary" link @click="openRule(row)">编辑</el-button></template>
             </el-table-column>
           </el-table>
+        </el-card>
+
+        <el-card v-else-if="activePage === 'additional'">
+          <template #header>附加内容设置</template>
+          <el-form label-width="140px">
+            <el-form-item label="启用附加内容"><el-switch v-model="additionalForm.enabled" /></el-form-item>
+            <el-form-item label="追加广告文字"><el-input v-model="additionalForm.text" type="textarea" :rows="4" placeholder="会追加到每条搬运帖子的文字末尾" /></el-form-item>
+            <el-form-item label="广告图/LOGO路径"><el-input v-model="additionalForm.imagePathsText" type="textarea" :rows="3" placeholder="每行一个本地图片路径，例如 assets/logo.png" /></el-form-item>
+            <el-form-item label="图片说明"><el-input v-model="additionalForm.image_caption" placeholder="发送附加图片时的说明文字" /></el-form-item>
+            <el-form-item><el-button type="primary" @click="saveAdditionalSettings">保存设置</el-button></el-form-item>
+          </el-form>
+          <el-alert title="当前版本会将 LOGO/广告图作为附加图片发送，不会叠加到原图上。图片水印需要后续接入 FFmpeg。" type="info" :closable="false" />
         </el-card>
 
         <section v-else-if="activePage === 'account'">
@@ -357,6 +370,7 @@ import {
   enqueueAddTarget,
   enqueueSync,
   createUser,
+  getAdditionalSettings,
   getAuditLogs,
   getControlCommands,
   getLoginHistory,
@@ -373,6 +387,7 @@ import {
   setSourceEnabled,
   setTargetEnabled,
   updateUser,
+  updateAdditionalSettings,
   updateRule,
 } from './api'
 
@@ -404,6 +419,7 @@ const addSourceForm = ref({ name: '', input: '', join: false })
 const addTargetForm = ref({ name: '', input: '' })
 const userForm = ref({ username: '', password: '', role: 'viewer' })
 const passwordForm = ref({ current: '', next: '', confirm: '' })
+const additionalForm = ref({ enabled: false, text: '', image_paths: [], imagePathsText: '', image_caption: '' })
 const commandForm = ref({ sourceName: '', source: '', targetName: '', target: '', join: false, syncSource: 'all', syncLimit: 100 })
 const ruleDialog = ref(false)
 const ruleForm = ref({})
@@ -450,6 +466,7 @@ async function refreshAll() {
     auditLogs.value = authenticated.value ? await getAuditLogs() : []
     loginHistory.value = authenticated.value ? await getLoginHistory() : []
     webUsers.value = authenticated.value && userRole.value === 'super_admin' ? await getUsers() : []
+    await loadAdditionalSettings()
     await loadJobs()
     lastRefresh.value = new Date().toLocaleString()
     await nextTick()
@@ -628,6 +645,34 @@ async function logoutAllAction() {
   const result = await logoutAllSessions()
   ElMessage.success(`已撤销 ${result.revoked} 个会话`)
   logout(false)
+}
+
+async function loadAdditionalSettings() {
+  if (!authenticated.value) return
+  const data = await getAdditionalSettings()
+  additionalForm.value = {
+    enabled: data.enabled,
+    text: data.text,
+    image_paths: data.image_paths || [],
+    imagePathsText: (data.image_paths || []).join('\n'),
+    image_caption: data.image_caption || '',
+  }
+}
+
+async function saveAdditionalSettings() {
+  const imagePaths = String(additionalForm.value.imagePathsText || '')
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  const result = await updateAdditionalSettings({
+    enabled: additionalForm.value.enabled,
+    text: additionalForm.value.text,
+    image_paths: imagePaths,
+    image_caption: additionalForm.value.image_caption,
+  })
+  additionalForm.value.image_paths = result.image_paths
+  additionalForm.value.imagePathsText = result.image_paths.join('\n')
+  ElMessage.success('附加内容设置已保存')
 }
 
 function openImmediateSync(row) {

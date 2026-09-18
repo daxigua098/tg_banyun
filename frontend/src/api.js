@@ -68,3 +68,8 @@ export const changePassword = (currentPassword, newPassword) =>
   }).then((response) => response.data)
 export const logoutAllSessions = () =>
   api.post('/api/auth/logout-all').then((response) => response.data)
+
+export const getAdditionalSettings = () =>
+  api.get('/api/settings/additional').then((response) => response.data)
+export const updateAdditionalSettings = (payload) =>
+  api.put('/api/settings/additional', payload).then((response) => response.data)

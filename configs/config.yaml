@@ -26,7 +26,6 @@ transfer:
   delay_seconds: 1.0
   max_attempts: 5
   retry_base_seconds: 5
-  # This is the only worker count supported by the MVP.
   worker_concurrency: 1
 
 history:
@@ -39,6 +38,12 @@ content_filter:
   media_only: true
   allow_photo: true
   allow_video: true
+
+additional:
+  enabled: false
+  text: ""
+  image_paths: []
+  image_caption: ""
 
 backup:
   enabled: true

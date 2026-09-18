@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import PROJECT_ROOT, AppConfig, load_config
+from app.config import PROJECT_ROOT, AdditionalConfig, AppConfig, load_config
 from app.core.auth import create_session_token, verify_session_token
 from app.core.heartbeat import is_process_running, read_runtime_status
 from app.core.runtime_control import is_runtime_paused, set_runtime_paused
@@ -46,6 +46,10 @@ from app.services.session_service import (
     revoke_all_web_sessions,
     revoke_web_session,
 )
+from app.services.settings_service import (
+    get_additional_settings,
+    set_additional_settings,
+)
 from app.services.user_service import (
     authenticate_web_user,
     create_web_user,
@@ -74,6 +78,13 @@ class EnabledUpdate(BaseModel):
 class RouteCreate(BaseModel):
     source_id: int = Field(gt=0)
     target_id: int = Field(gt=0)
+
+
+class AdditionalSettingsUpdate(BaseModel):
+    enabled: bool = False
+    text: str = ""
+    image_paths: list[str] = Field(default_factory=list)
+    image_caption: str = ""
 
 
 class LoginRequest(BaseModel):
@@ -331,6 +342,24 @@ def create_app() -> FastAPI:
             return {"username": username, "revoked": 0}
         count = await revoke_all_web_sessions(session, username)
         return {"username": username, "revoked": count}
+
+    @app.get("/api/settings/additional", dependencies=[Depends(require_auth)])
+    async def additional_settings(
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        settings = await get_additional_settings(session, config.additional)
+        return settings.model_dump()
+
+    @app.put("/api/settings/additional", dependencies=[Depends(require_auth)])
+    async def update_additional_settings(
+        payload: AdditionalSettingsUpdate,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        settings = await set_additional_settings(
+            session,
+            AdditionalConfig.model_validate(payload.model_dump()),
+        )
+        return settings.model_dump()
 
     @app.get("/api/status", dependencies=[Depends(require_auth)])
     async def status(session: AsyncSession = Depends(session_dependency)) -> dict[str, Any]:

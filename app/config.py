@@ -105,6 +105,15 @@ class ContentFilterConfig(BaseModel):
     allow_video: bool = True
 
 
+class AdditionalConfig(BaseModel):
+    """Optional text and images added after a mirrored post."""
+
+    enabled: bool = False
+    text: str = ""
+    image_paths: list[str] = Field(default_factory=list)
+    image_caption: str = ""
+
+
 class BackupConfig(BaseModel):
     """Automatic backup scheduling and retention."""
 
@@ -160,6 +169,7 @@ class AppConfig(BaseModel):
     transfer: TransferConfig = Field(default_factory=TransferConfig)
     history: HistoryConfig = Field(default_factory=HistoryConfig)
     content_filter: ContentFilterConfig = Field(default_factory=ContentFilterConfig)
+    additional: AdditionalConfig = Field(default_factory=AdditionalConfig)
     backup: BackupConfig = Field(default_factory=BackupConfig)
     alerts: AlertConfig = Field(default_factory=AlertConfig)
     web: WebConfig = Field(default_factory=WebConfig)

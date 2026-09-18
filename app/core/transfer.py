@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Iterable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -18,6 +20,12 @@ from app.config import AppConfig
 from app.core.message_batch import MessageBatch
 from app.models import DeliveryJob, RecordTarget, Route, Source, Target
 from app.services.notifier_service import AdminNotifier
+from app.services.settings_service import get_additional_settings
+
+
+@asynccontextmanager
+async def _null_async_context():
+    yield
 
 
 class SequentialTransferService:
@@ -180,6 +188,15 @@ class SequentialTransferService:
 
             try:
                 result = await self._forward_message(source, target, batch)
+                try:
+                    await self._apply_additional_content(target, result)
+                except Exception as exc:  # noqa: BLE001 - post already sent
+                    logger.error(
+                        "Additional content failed target={} error={}: {}",
+                        target.id,
+                        type(exc).__name__,
+                        exc,
+                    )
                 job.status = "success"
                 job.last_error = None
                 job.next_retry_at = None
@@ -337,6 +354,47 @@ class SequentialTransferService:
                     exc,
                 )
 
+    async def _apply_additional_content(self, target: Target, result: Any) -> None:
+        async with self.session_factory() as session:
+            settings = await get_additional_settings(session, self.config.additional)
+        if not settings.enabled:
+            return
+
+        target_entity = target.tg_id or target.raw_input
+        target_message = self._first_result_message(result)
+        if settings.text and target_message is not None:
+            original = target_message.raw_text or ""
+            new_text = f"{original}\n\n{settings.text}".strip()
+            async with self.operation_lock if self.operation_lock else _null_async_context():
+                await self.client.edit_message(
+                    target_entity,
+                    target_message.id,
+                    new_text,
+                    link_preview=False,
+                )
+
+        for raw_path in settings.image_paths:
+            image_path = Path(raw_path)
+            if not image_path.is_absolute():
+                image_path = self.config.project_root / image_path
+            if not image_path.exists():
+                logger.warning("Additional image not found: {}", image_path)
+                continue
+            async with self.operation_lock if self.operation_lock else _null_async_context():
+                await self.client.send_file(
+                    target_entity,
+                    str(image_path),
+                    caption=settings.image_caption or None,
+                )
+
+    @staticmethod
+    def _first_result_message(result: Any) -> Any | None:
+        if hasattr(result, "id"):
+            return result
+        if isinstance(result, Iterable):
+            return next(iter(result), None)
+        return None
+
     async def _forward_message(
         self,
         source: Source,
@@ -384,5 +442,3 @@ class SequentialTransferService:
                 select(DeliveryJob.status, func.count(DeliveryJob.id)).group_by(DeliveryJob.status)
             )
             return {str(status): int(count) for status, count in rows.all()}
-
-
