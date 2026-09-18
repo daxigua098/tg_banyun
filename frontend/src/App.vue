@@ -23,6 +23,7 @@
         <el-menu-item index="rules">过滤规则</el-menu-item>
         <el-menu-item index="jobs">投递任务</el-menu-item>
         <el-menu-item index="commands">控制命令</el-menu-item>
+        <el-menu-item index="audit">操作日志</el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -119,6 +120,19 @@
             <el-table-column label="操作" width="100">
               <template #default="{ row }"><el-button type="primary" link @click="openRule(row)">编辑</el-button></template>
             </el-table-column>
+          </el-table>
+        </el-card>
+
+        <el-card v-else-if="activePage === 'audit'">
+          <template #header>最近操作日志</template>
+          <el-table :data="auditLogs" stripe>
+            <el-table-column prop="id" label="ID" width="80" />
+            <el-table-column prop="username" label="用户" width="140" />
+            <el-table-column prop="method" label="方法" width="90" />
+            <el-table-column prop="path" label="接口" min-width="240" />
+            <el-table-column prop="status_code" label="状态码" width="90" />
+            <el-table-column prop="ip_address" label="IP" width="140" />
+            <el-table-column prop="created_at" label="时间" min-width="180" />
           </el-table>
         </el-card>
 
@@ -249,6 +263,7 @@ const lastRefresh = ref('')
 const chartElement = ref(null)
 const newRoute = ref({ source_id: null, target_id: null })
 const commands = ref([])
+const auditLogs = ref([])
 const commandForm = ref({ source: '', target: '', join: false, syncSource: 'all', syncLimit: 100 })
 const ruleDialog = ref(false)
 const ruleForm = ref({})
@@ -292,6 +307,7 @@ async function refreshAll() {
     routes.value = routeData
     rules.value = ruleData
     commands.value = commandData
+    auditLogs.value = authenticated.value ? await getAuditLogs() : []
     await loadJobs()
     lastRefresh.value = new Date().toLocaleString()
     await nextTick()

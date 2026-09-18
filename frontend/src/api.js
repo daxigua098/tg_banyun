@@ -47,3 +47,6 @@ export const enqueueSync = (sourceId, limit = 100) =>
 export const checkAuth = () => api.get('/api/auth/check').then((response) => response.data)
 
 export const login = (username, password) => api.post('/api/auth/login', { username, password }).then((response) => response.data)
+
+export const getAuditLogs = (limit = 100) =>
+  api.get('/api/audit', { params: { limit } }).then((response) => response.data)

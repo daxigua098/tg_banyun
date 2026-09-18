@@ -220,3 +220,16 @@ class ControlCommand(TimestampMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+
+class AuditLog(Base):
+    """Administrative and API action audit trail."""
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), default="anonymous", index=True)
+    method: Mapped[str] = mapped_column(String(16))
+    path: Mapped[str] = mapped_column(String(512), index=True)
+    status_code: Mapped[int] = mapped_column(Integer)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

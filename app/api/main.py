@@ -21,6 +21,7 @@ from app.core.heartbeat import is_process_running, read_runtime_status
 from app.core.runtime_control import is_runtime_paused, set_runtime_paused
 from app.database import dispose_database, get_session_factory, init_database
 from app.models import DeliveryJob, Route, Source, Target
+from app.services.audit_service import list_audit_logs, write_audit_log
 from app.services.control_command_service import (
     COMMAND_ADD_SOURCE,
     COMMAND_ADD_TARGET,
@@ -102,6 +103,39 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    def authenticated_username(request: Request) -> str:
+        authorization = request.headers.get("authorization", "")
+        supplied = (
+            authorization.removeprefix("Bearer ").strip()
+            if authorization
+            else ""
+        )
+        web = request.app.state.config.web
+        if web.api_token and hmac.compare_digest(supplied, web.api_token):
+            return "api-token"
+        payload = verify_session_token(web, supplied) if supplied else None
+        return str(payload.get("sub")) if payload else "anonymous"
+
+    @app.middleware("http")
+    async def audit_middleware(request: Request, call_next: Any) -> Any:
+        response = await call_next(request)
+        is_write = request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        if is_write and request.url.path.startswith("/api/"):
+            try:
+                factory = get_session_factory()
+                async with factory() as session:
+                    await write_audit_log(
+                        session,
+                        username=authenticated_username(request),
+                        method=request.method,
+                        path=request.url.path,
+                        status_code=response.status_code,
+                        ip_address=request.client.host if request.client else None,
+                    )
+            except Exception:  # noqa: BLE001 - auditing must not break responses
+                pass
+        return response
 
     async def require_auth(
         request: Request,
@@ -425,6 +459,25 @@ def create_app() -> FastAPI:
             {"source_id": source_value, "limit": payload.limit},
         )
         return {"id": command.id, "status": command.status}
+
+    @app.get("/api/audit", dependencies=[Depends(require_auth)])
+    async def audit_logs(
+        limit: int = Query(default=100, ge=1, le=500),
+        session: AsyncSession = Depends(session_dependency),
+    ) -> list[dict[str, Any]]:
+        rows = await list_audit_logs(session, limit=limit)
+        return [
+            {
+                "id": item.id,
+                "username": item.username,
+                "method": item.method,
+                "path": item.path,
+                "status_code": item.status_code,
+                "ip_address": item.ip_address,
+                "created_at": item.created_at,
+            }
+            for item in rows
+        ]
 
     @app.get("/api/control/commands", dependencies=[Depends(require_auth)])
     async def control_commands(
