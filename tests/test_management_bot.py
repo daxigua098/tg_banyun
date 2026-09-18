@@ -15,6 +15,7 @@ from sqlalchemy.pool import StaticPool
 from app.config import AppConfig, ManagementBotConfig, TransferConfig
 from app.core.transfer import SequentialTransferService
 from app.models import Base, DeliveryJob, Route, Source, Target
+from app.services import management_command_service as command_module
 from app.services.management_bot_service import ManagementBotService
 from app.services.management_command_service import ManagementCommandService
 
@@ -117,7 +118,13 @@ async def test_management_commands_update_and_report_state() -> None:
     await engine.dispose()
 
 
-async def test_management_bot_enforces_admin_permissions() -> None:
+async def test_management_bot_enforces_admin_permissions(monkeypatch) -> None:
+    monkeypatch.setattr(
+        command_module,
+        "read_runtime_status",
+        lambda path: {"status": "running", "pid": 12345},
+    )
+    monkeypatch.setattr(command_module, "is_process_running", lambda pid: True)
     session_factory, engine = await _build_factory()
     config = AppConfig(
         management_bot=ManagementBotConfig(enabled=True, admin_user_ids=[42]),
@@ -136,5 +143,7 @@ async def test_management_bot_enforces_admin_permissions() -> None:
     await bot_service._handle_message(allowed)
     assert allowed.responses
     assert "TG-Mirror-Bot 状态" in allowed.responses[0]
+    assert "运行状态：运行中" in allowed.responses[0]
 
     await engine.dispose()
+
