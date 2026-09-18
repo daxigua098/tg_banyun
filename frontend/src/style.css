@@ -1,0 +1,25 @@
+html, body, #app { height: 100%; margin: 0; }
+body { background: #f4f6f9; color: #1f2937; font-family: system-ui, "Microsoft YaHei", sans-serif; }
+.app-shell { min-height: 100%; }
+.sidebar { background: #111827; color: white; }
+.brand { padding: 24px 20px; }
+.brand-title { font-size: 20px; font-weight: 700; }
+.brand-subtitle { margin-top: 6px; color: #9ca3af; font-size: 13px; }
+.menu { border: 0; background: transparent; }
+.menu .el-menu-item { color: #d1d5db; }
+.menu .el-menu-item.is-active { color: #fff; background: #1f2937; }
+.topbar { display: flex; align-items: center; justify-content: space-between; background: #fff; border-bottom: 1px solid #e5e7eb; padding: 0 24px; }
+.page-title { font-size: 20px; font-weight: 700; }
+.page-subtitle { color: #6b7280; font-size: 12px; margin-top: 4px; }
+.actions { display: flex; gap: 10px; }
+.content { padding: 24px; }
+.stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.stat-label { color: #6b7280; font-size: 13px; }
+.stat-value { margin-top: 10px; font-size: 24px; font-weight: 700; }
+.chart-card { margin-top: 18px; }
+.chart { height: 360px; }
+.filters { display: flex; gap: 10px; margin-bottom: 16px; }
+@media (max-width: 900px) {
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .topbar { height: auto; padding: 14px; flex-direction: column; align-items: flex-start; gap: 12px; }
+}

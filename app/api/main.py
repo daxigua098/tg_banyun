@@ -8,10 +8,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import AppConfig, load_config
+from app.config import PROJECT_ROOT, AppConfig, load_config
 from app.core.heartbeat import is_process_running, read_runtime_status
 from app.core.runtime_control import is_runtime_paused, set_runtime_paused
 from app.database import dispose_database, get_session_factory, init_database
@@ -40,6 +42,14 @@ def create_app() -> FastAPI:
         title="TG-Mirror-Bot Management API",
         version="0.1.0",
         lifespan=_lifespan,
+    )
+    config = load_config()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.web.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     async def require_auth(
@@ -212,8 +222,11 @@ def create_app() -> FastAPI:
         await session.commit()
         return {"retried": result.rowcount or 0}
 
+    frontend_dist = PROJECT_ROOT / "frontend" / "dist"
+    if frontend_dist.exists():
+        app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+
     return app
 
 
 app = create_app()
-

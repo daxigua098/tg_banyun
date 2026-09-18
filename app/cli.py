@@ -412,12 +412,15 @@ async def command_api(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     import uvicorn
 
-    uvicorn.run(
-        "app.api.main:app",
-        host=config.web.host,
-        port=config.web.port,
-        reload=False,
+    server = uvicorn.Server(
+        uvicorn.Config(
+            "app.api.main:app",
+            host=config.web.host,
+            port=config.web.port,
+            reload=False,
+        )
     )
+    await server.serve()
 
 
 async def command_backup(args: argparse.Namespace) -> None:

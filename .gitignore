@@ -25,3 +25,8 @@ backups/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+.npm-cache/
