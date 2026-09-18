@@ -23,3 +23,14 @@ export const getJobs = (status = '', limit = 100) =>
 export const pauseRuntime = () => api.post('/api/pause').then((response) => response.data)
 export const resumeRuntime = () => api.post('/api/resume').then((response) => response.data)
 export const retryFailed = () => api.post('/api/retry-failed').then((response) => response.data)
+
+export const setSourceEnabled = (id, enabled) =>
+  api.patch(`/api/sources/${id}`, { enabled }).then((response) => response.data)
+export const setTargetEnabled = (id, enabled) =>
+  api.patch(`/api/targets/${id}`, { enabled }).then((response) => response.data)
+export const createRoute = (sourceId, targetId) =>
+  api.post('/api/routes', { source_id: sourceId, target_id: targetId }).then((response) => response.data)
+export const deleteRoute = (id) =>
+  api.delete(`/api/routes/${id}`).then((response) => response.data)
+export const updateRule = (sourceId, rule) =>
+  api.put(`/api/rules/${sourceId}`, rule).then((response) => response.data)

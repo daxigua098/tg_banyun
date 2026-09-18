@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +23,7 @@ from app.services.rule_service import (
     list_source_rules,
     load_keywords,
     load_sender_ids,
+    replace_source_rule,
 )
 
 
@@ -34,6 +36,27 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await dispose_database()
+
+
+class EnabledUpdate(BaseModel):
+    enabled: bool
+
+
+class RouteCreate(BaseModel):
+    source_id: int = Field(gt=0)
+    target_id: int = Field(gt=0)
+
+
+class RuleUpdate(BaseModel):
+    allow_photo: bool = True
+    allow_video: bool = True
+    post_only: bool = False
+    admin_only: bool = False
+    skip_forwarded: bool = False
+    keyword_whitelist: list[str] = Field(default_factory=list)
+    keyword_blacklist: list[str] = Field(default_factory=list)
+    sender_whitelist: list[int] = Field(default_factory=list)
+    sender_blacklist: list[int] = Field(default_factory=list)
 
 
 def create_app() -> FastAPI:
@@ -131,6 +154,106 @@ def create_app() -> FastAPI:
             }
             for item in rows
         ]
+
+    @app.patch("/api/sources/{source_id}", dependencies=[Depends(require_auth)])
+    async def update_source(
+        source_id: int,
+        payload: EnabledUpdate,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        source = await session.get(Source, source_id)
+        if source is None:
+            raise HTTPException(status_code=404, detail="源不存在")
+        source.enabled = payload.enabled
+        await session.commit()
+        return {"id": source.id, "enabled": source.enabled}
+
+    @app.patch("/api/targets/{target_id}", dependencies=[Depends(require_auth)])
+    async def update_target(
+        target_id: int,
+        payload: EnabledUpdate,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        target = await session.get(Target, target_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="目标不存在")
+        target.enabled = payload.enabled
+        await session.commit()
+        return {"id": target.id, "enabled": target.enabled}
+
+    @app.post("/api/routes", dependencies=[Depends(require_auth)])
+    async def create_route(
+        payload: RouteCreate,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        source = await session.get(Source, payload.source_id)
+        target = await session.get(Target, payload.target_id)
+        if source is None or target is None:
+            raise HTTPException(status_code=404, detail="源或目标不存在")
+        route = await session.scalar(
+            select(Route).where(
+                Route.source_id == payload.source_id,
+                Route.target_id == payload.target_id,
+            )
+        )
+        if route is None:
+            route = Route(
+                source_id=payload.source_id,
+                target_id=payload.target_id,
+            )
+            session.add(route)
+            await session.commit()
+            await session.refresh(route)
+        return {
+            "id": route.id,
+            "source_id": route.source_id,
+            "target_id": route.target_id,
+            "enabled": route.enabled,
+        }
+
+    @app.delete("/api/routes/{route_id}", dependencies=[Depends(require_auth)])
+    async def remove_route(
+        route_id: int,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, bool]:
+        route = await session.get(Route, route_id)
+        if route is None:
+            raise HTTPException(status_code=404, detail="路由不存在")
+        await session.delete(route)
+        await session.commit()
+        return {"deleted": True}
+
+    @app.put("/api/rules/{source_id}", dependencies=[Depends(require_auth)])
+    async def update_rule(
+        source_id: int,
+        payload: RuleUpdate,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        rule = await replace_source_rule(
+            session,
+            source_id,
+            allow_photo=payload.allow_photo,
+            allow_video=payload.allow_video,
+            post_only=payload.post_only,
+            admin_only=payload.admin_only,
+            skip_forwarded=payload.skip_forwarded,
+            keyword_whitelist=payload.keyword_whitelist,
+            keyword_blacklist=payload.keyword_blacklist,
+            sender_whitelist=payload.sender_whitelist,
+            sender_blacklist=payload.sender_blacklist,
+        )
+        return {
+            "source_id": source_id,
+            "allow_photo": rule.allow_photo,
+            "allow_video": rule.allow_video,
+            "post_only": rule.post_only,
+            "admin_only": rule.admin_only,
+            "skip_forwarded": rule.skip_forwarded,
+            "keyword_whitelist": payload.keyword_whitelist,
+            "keyword_blacklist": payload.keyword_blacklist,
+            "sender_whitelist": payload.sender_whitelist,
+            "sender_blacklist": payload.sender_blacklist,
+        }
 
     @app.get("/api/routes", dependencies=[Depends(require_auth)])
     async def routes(session: AsyncSession = Depends(session_dependency)) -> list[dict[str, Any]]:

@@ -131,3 +131,32 @@ def load_keywords(value: str) -> list[str]:
         return []
     return [str(item) for item in items] if isinstance(items, list) else []
 
+
+async def replace_source_rule(
+    session: AsyncSession,
+    source_id: int,
+    *,
+    allow_photo: bool,
+    allow_video: bool,
+    post_only: bool,
+    admin_only: bool,
+    skip_forwarded: bool,
+    keyword_whitelist: list[str],
+    keyword_blacklist: list[str],
+    sender_whitelist: list[int],
+    sender_blacklist: list[int],
+) -> SourceRule:
+    """Replace all configurable values for one source rule."""
+    rule = await get_source_rule(session, source_id)
+    rule.allow_photo = allow_photo
+    rule.allow_video = allow_video
+    rule.post_only = post_only
+    rule.admin_only = admin_only
+    rule.skip_forwarded = skip_forwarded
+    rule.keyword_whitelist = json.dumps(keyword_whitelist, ensure_ascii=False)
+    rule.keyword_blacklist = json.dumps(keyword_blacklist, ensure_ascii=False)
+    rule.sender_whitelist = json.dumps(sender_whitelist)
+    rule.sender_blacklist = json.dumps(sender_blacklist)
+    await session.commit()
+    await session.refresh(rule)
+    return rule
