@@ -26,6 +26,7 @@ from app.services.audit_service import list_audit_logs, write_audit_log
 from app.services.control_command_service import (
     COMMAND_ADD_SOURCE,
     COMMAND_ADD_TARGET,
+    COMMAND_MANUAL_POST,
     COMMAND_SYNC,
     enqueue_control_command,
     list_control_commands,
@@ -102,6 +103,12 @@ class AddSourceCommand(BaseModel):
 class AddTargetCommand(BaseModel):
     name: str = ""
     input: str
+
+
+class ManualPostCommand(BaseModel):
+    target_ids: list[int] = Field(min_length=1)
+    text: str = ""
+    image_path: str = ""
 
 
 class SyncCommand(BaseModel):
@@ -637,6 +644,22 @@ def create_app() -> FastAPI:
         )
         return {"id": command.id, "status": command.status}
 
+    @app.post("/api/control/manual-post", dependencies=[Depends(require_auth)])
+    async def command_manual_post(
+        payload: ManualPostCommand,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        command = await enqueue_control_command(
+            session,
+            COMMAND_MANUAL_POST,
+            {
+                "target_ids": payload.target_ids,
+                "text": payload.text,
+                "image_path": payload.image_path,
+            },
+        )
+        return {"id": command.id, "status": command.status}
+
     @app.post("/api/control/sync", dependencies=[Depends(require_auth)])
     async def command_sync(
         payload: SyncCommand,
@@ -810,3 +833,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+

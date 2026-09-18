@@ -79,3 +79,6 @@ export const uploadAdditionalImage = (file) => {
   formData.append('file', file)
   return api.post('/api/settings/additional/upload', formData).then((response) => response.data)
 }
+
+export const sendManualPost = (payload) =>
+  api.post('/api/control/manual-post', payload).then((response) => response.data)

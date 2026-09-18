@@ -14,6 +14,7 @@ COMMAND_ADD_SOURCE = "add_source"
 COMMAND_ADD_TARGET = "add_target"
 COMMAND_SYNC = "sync"
 COMMAND_NOTIFY_ADMINS = "notify_admins"
+COMMAND_MANUAL_POST = "manual_post"
 
 
 async def enqueue_control_command(
@@ -59,3 +60,4 @@ def load_command_payload(command: ControlCommand) -> dict[str, Any]:
     except (TypeError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+

@@ -31,6 +31,7 @@ from app.services.backup_service import (
 from app.services.control_command_service import (
     COMMAND_ADD_SOURCE,
     COMMAND_ADD_TARGET,
+    COMMAND_MANUAL_POST,
     COMMAND_NOTIFY_ADMINS,
     COMMAND_SYNC,
     load_command_payload,
@@ -334,6 +335,37 @@ class RuntimeService:
                         display_name=str(payload.get("name") or "") or None,
                     )
             return {"target_id": target.id, "title": target.title}
+        if command.command_type == COMMAND_MANUAL_POST:
+            target_ids = [int(item) for item in payload.get("target_ids") or []]
+            text = str(payload.get("text") or "")
+            image_path = str(payload.get("image_path") or "")
+            if not target_ids:
+                raise ValueError("手动发帖至少需要一个目标。")
+            if not text and not image_path:
+                raise ValueError("手动发帖需要文字或图片。")
+            sent: list[dict[str, int]] = []
+            for target_id in target_ids:
+                async with self.session_factory() as session:
+                    target = await session.get(Target, target_id)
+                if target is None or not target.enabled:
+                    continue
+                entity = target.tg_id or target.raw_input
+                async with self.operation_lock:
+                    if image_path:
+                        path = Path(image_path)
+                        if not path.is_absolute():
+                            path = self.config.project_root / path
+                        if not path.exists():
+                            raise ValueError(f"帖子图片不存在：{image_path}")
+                        result = await self.client.send_file(
+                            entity,
+                            str(path),
+                            caption=text or None,
+                        )
+                    else:
+                        result = await self.client.send_message(entity, text)
+                sent.append({"target_id": target_id, "message_id": int(getattr(result, "id", 0))})
+            return {"sent": sent}
         if command.command_type == COMMAND_NOTIFY_ADMINS:
             text = str(payload.get("text") or "TG-Mirror-Bot 异常通知")
             if self.notifier is not None:
@@ -379,4 +411,5 @@ class RuntimeService:
                     await self.transfer.process_pending()
             finally:
                 self.queue.task_done()
+
 

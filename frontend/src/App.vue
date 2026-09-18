@@ -28,6 +28,7 @@
         <el-menu-item v-if="userRole === 'super_admin'" index="users">用户管理</el-menu-item>
         <el-menu-item index="account">账号安全</el-menu-item>
         <el-menu-item index="additional">内容设置</el-menu-item>
+        <el-menu-item index="manual_post">手动发帖</el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -136,6 +137,27 @@
               <template #default="{ row }"><el-button type="primary" link @click="openRule(row)">编辑</el-button></template>
             </el-table-column>
           </el-table>
+        </el-card>
+
+        <el-card v-else-if="activePage === 'manual_post'">
+          <template #header>编辑并群发帖子</template>
+          <el-form label-width="110px">
+            <el-form-item label="目标群组">
+              <el-select v-model="manualForm.targetIds" multiple placeholder="选择一个或多个目标" style="width: 100%">
+                <el-option v-for="target in targets" :key="target.id" :label="`${target.id} - ${target.display_name || target.title}`" :value="target.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="帖子内容">
+              <el-input v-model="manualForm.text" type="textarea" :rows="8" placeholder="输入要发送的文字内容" />
+            </el-form-item>
+            <el-form-item label="配图">
+              <el-upload :show-file-list="false" :http-request="uploadManualImage" accept=".png,.jpg,.jpeg,.webp,.gif">
+                <el-button :loading="uploadingManualImage">上传配图</el-button>
+              </el-upload>
+              <span v-if="manualForm.imagePath" class="upload-hint">{{ manualForm.imagePath }}</span>
+            </el-form-item>
+            <el-form-item><el-button type="primary" @click="submitManualPost">加入发送队列</el-button></el-form-item>
+          </el-form>
         </el-card>
 
         <el-card v-else-if="activePage === 'additional'">
@@ -383,6 +405,7 @@ import {
   enqueueSync,
   createUser,
   getAdditionalSettings,
+  sendManualPost,
   getAuditLogs,
   getControlCommands,
   getLoginHistory,
@@ -433,6 +456,8 @@ const addTargetForm = ref({ name: '', input: '' })
 const userForm = ref({ username: '', password: '', role: 'viewer' })
 const passwordForm = ref({ current: '', next: '', confirm: '' })
 const additionalForm = ref({ enabled: false, text: '', image_paths: [], imagePathsText: '', image_caption: '' })
+const manualForm = ref({ targetIds: [], text: '', imagePath: '' })
+const uploadingManualImage = ref(false)
 const uploadingImage = ref(false)
 const commandForm = ref({ sourceName: '', source: '', targetName: '', target: '', join: false, syncSource: 'all', syncLimit: 100 })
 const ruleDialog = ref(false)
@@ -659,6 +684,32 @@ async function logoutAllAction() {
   const result = await logoutAllSessions()
   ElMessage.success(`已撤销 ${result.revoked} 个会话`)
   logout(false)
+}
+
+async function uploadManualImage(options) {
+  uploadingManualImage.value = true
+  try {
+    const result = await uploadAdditionalImage(options.file)
+    manualForm.value.imagePath = result.path
+    ElMessage.success('配图已上传')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '图片上传失败')
+  } finally {
+    uploadingManualImage.value = false
+  }
+}
+
+async function submitManualPost() {
+  if (!manualForm.value.targetIds.length) return ElMessage.warning('请选择目标群组')
+  if (!manualForm.value.text && !manualForm.value.imagePath) return ElMessage.warning('请输入文字或上传配图')
+  await sendManualPost({
+    target_ids: manualForm.value.targetIds,
+    text: manualForm.value.text,
+    image_path: manualForm.value.imagePath,
+  })
+  ElMessage.success('帖子已加入发送队列')
+  manualForm.value = { targetIds: [], text: '', imagePath: '' }
+  setTimeout(refreshAll, 1500)
 }
 
 async function loadAdditionalSettings() {
