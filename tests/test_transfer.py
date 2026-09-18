@@ -269,3 +269,48 @@ async def test_album_batch_is_forwarded_as_one_album() -> None:
         assert job.media_group_id == 555
 
     await engine.dispose()
+
+class FakeNotifier:
+    def __init__(self) -> None:
+        self.failures: list[str] = []
+
+    async def failure(self, detail: str) -> None:
+        self.failures.append(detail)
+
+
+async def test_permanent_delivery_failure_notifies_admin() -> None:
+    session_factory, engine = await _build_factory()
+    config = AppConfig(transfer=TransferConfig(delay_seconds=0, max_attempts=1))
+
+    async with session_factory() as session:
+        source = Source(
+            raw_input="@source",
+            normalized_key="username:source",
+            tg_id=100,
+            title="Source",
+        )
+        target = Target(
+            raw_input="@target",
+            normalized_key="username:target",
+            tg_id=201,
+            title="Target",
+        )
+        session.add_all([source, target])
+        await session.commit()
+        session.add(Route(source_id=source.id, target_id=target.id))
+        await session.commit()
+        source_id = source.id
+
+    notifier = FakeNotifier()
+    service = SequentialTransferService(
+        InvalidMessageClient(),
+        session_factory,
+        config,
+        notifier=notifier,
+    )
+    await service.enqueue_message(source_id, 1)
+    await service.process_pending()
+
+    assert len(notifier.failures) == 1
+    assert "投递永久失败" in notifier.failures[0]
+    await engine.dispose()

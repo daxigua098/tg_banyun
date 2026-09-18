@@ -26,6 +26,7 @@ from app.services.backup_service import (
     prune_backups,
 )
 from app.services.history_service import HistorySyncService
+from app.services.notifier_service import AdminNotifier
 
 
 class RuntimeService:
@@ -38,11 +39,13 @@ class RuntimeService:
         transfer: SequentialTransferService,
         config: AppConfig,
         operation_lock: asyncio.Lock | None = None,
+        notifier: AdminNotifier | None = None,
     ) -> None:
         self.client = client
         self.session_factory = session_factory
         self.transfer = transfer
         self.config = config
+        self.notifier = notifier
         self.history = HistorySyncService(
             client,
             session_factory,
@@ -95,6 +98,10 @@ class RuntimeService:
                 self._consume_queue(),
                 name="sequential-transfer-worker",
             )
+            if self.notifier is not None:
+                await self.notifier.startup(
+                    "实时监听已启动，历史补发和自动备份均已就绪。"
+                )
             logger.info("Realtime listener is running; all transfers use one sequential worker")
             await self.client.run_until_disconnected()
         finally:
@@ -180,6 +187,8 @@ class RuntimeService:
             archive,
             removed,
         )
+        if self.notifier is not None:
+            await self.notifier.backup(f"备份文件：{archive.name}\n清理旧备份：{removed} 份")
 
     async def _sync_history_sequentially(self) -> None:
         if not self.config.history.enabled:
@@ -195,7 +204,15 @@ class RuntimeService:
             )
 
         for source_id in source_ids:
-            await self.history.sync_source(source_id)
+            try:
+                await self.history.sync_source(source_id)
+            except Exception as exc:  # noqa: BLE001 - continue other sources
+                if self.notifier is not None:
+                    await self.notifier.failure(
+                        f"源同步失败\n源 ID：{source_id}\n"
+                        f"错误：{type(exc).__name__}: {exc}"
+                    )
+                continue
             if not is_runtime_paused(self.control_path):
                 await self.transfer.process_pending()
 
@@ -260,3 +277,4 @@ class RuntimeService:
                     await self.transfer.process_pending()
             finally:
                 self.queue.task_done()
+

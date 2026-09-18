@@ -114,6 +114,15 @@ class BackupConfig(BaseModel):
     directory: str = "backups"
 
 
+class AlertConfig(BaseModel):
+    """Admin notification settings."""
+
+    enabled: bool = True
+    notify_on_startup: bool = True
+    notify_on_failure: bool = True
+    notify_on_backup: bool = True
+
+
 class LoggingConfig(BaseModel):
     """Logging settings."""
 
@@ -132,6 +141,7 @@ class AppConfig(BaseModel):
     history: HistoryConfig = Field(default_factory=HistoryConfig)
     content_filter: ContentFilterConfig = Field(default_factory=ContentFilterConfig)
     backup: BackupConfig = Field(default_factory=BackupConfig)
+    alerts: AlertConfig = Field(default_factory=AlertConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
     @property
@@ -185,3 +195,4 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         management_bot["admin_user_ids"] = _parse_admin_ids(os.environ["TG_ADMIN_IDS"])
 
     return AppConfig.model_validate(raw)
+

@@ -30,6 +30,7 @@ from app.services.backup_service import BackupError, create_backup, restore_back
 from app.services.history_service import HistorySyncService
 from app.services.management_bot_service import ManagementBotService
 from app.services.management_command_service import ManagementCommandService
+from app.services.notifier_service import AdminNotifier
 from app.services.record_service import (
     add_record_target,
     list_record_targets,
@@ -341,6 +342,13 @@ async def command_run(args: argparse.Namespace) -> None:
                 transfer,
                 operation_lock,
             )
+            notifier = AdminNotifier(
+                bot_client,
+                config.management_bot.admin_user_ids,
+                config.alerts,
+            )
+            transfer.notifier = notifier
+            runtime.notifier = notifier
             tasks.append(
                 asyncio.create_task(bot_service.run(), name="management-bot-runtime")
             )
@@ -617,3 +625,5 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - CLI should show a concise error
         print(f"Error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
+
+

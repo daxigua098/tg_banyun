@@ -46,6 +46,13 @@ backup:
   retention_count: 7
   directory: backups
 
+alerts:
+  enabled: true
+  notify_on_startup: true
+  notify_on_failure: true
+  notify_on_backup: true
+
 logging:
   level: INFO
   file: logs/app.log
+

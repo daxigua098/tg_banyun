@@ -17,6 +17,7 @@ from telethon.errors import FloodWaitError, MessageIdInvalidError
 from app.config import AppConfig
 from app.core.message_batch import MessageBatch
 from app.models import DeliveryJob, RecordTarget, Route, Source, Target
+from app.services.notifier_service import AdminNotifier
 
 
 class SequentialTransferService:
@@ -28,11 +29,13 @@ class SequentialTransferService:
         session_factory: async_sessionmaker[AsyncSession],
         config: AppConfig,
         operation_lock: asyncio.Lock | None = None,
+        notifier: AdminNotifier | None = None,
     ) -> None:
         self.client = client
         self.session_factory = session_factory
         self.config = config
         self.operation_lock = operation_lock
+        self.notifier = notifier
         self._worker_lock = asyncio.Lock()
 
     async def recover_interrupted_jobs(self) -> int:
@@ -216,6 +219,14 @@ class SequentialTransferService:
                     batch.message_ids,
                     target.id,
                 )
+                if self.notifier is not None:
+                    await self.notifier.failure(
+                        "投递永久失败\n"
+                        f"源：{source.title or source.raw_input} (ID {source.id})\n"
+                        f"消息：{', '.join(str(item) for item in batch.message_ids)}\n"
+                        f"目标：{target.title or target.raw_input} (ID {target.id})\n"
+                        f"错误：{job.last_error}"
+                    )
             except Exception as exc:  # noqa: BLE001 - job failures must not stop the worker
                 message = f"{type(exc).__name__}: {exc}"[:2000]
                 if job.attempt_count >= job.max_attempts:
@@ -245,6 +256,14 @@ class SequentialTransferService:
                     batch.message_ids,
                     target.id,
                 )
+                if job.status == "failed" and self.notifier is not None:
+                    await self.notifier.failure(
+                        "投递永久失败\n"
+                        f"源：{source.title or source.raw_input} (ID {source.id})\n"
+                        f"消息：{', '.join(str(item) for item in batch.message_ids)}\n"
+                        f"目标：{target.title or target.raw_input} (ID {target.id})\n"
+                        f"错误：{message}"
+                    )
 
     @staticmethod
     def _batch_from_job(job: DeliveryJob) -> MessageBatch:
@@ -365,3 +384,5 @@ class SequentialTransferService:
                 select(DeliveryJob.status, func.count(DeliveryJob.id)).group_by(DeliveryJob.status)
             )
             return {str(status): int(count) for status, count in rows.all()}
+
+
