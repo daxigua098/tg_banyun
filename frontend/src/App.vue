@@ -790,12 +790,19 @@ function insertEditorLink() {
   if (url) editorCommand('createLink', url)
 }
 
+function editorImageUrl(path) {
+  if (path.startsWith('assets/uploads/')) {
+    return `/uploads/${path.split('/').pop()}`
+  }
+  return path
+}
+
 function insertEditorImage(path) {
   const editor = manualEditor.value
   if (!editor) return
   editor.focus()
   const image = document.createElement('img')
-  image.src = path
+  image.src = editorImageUrl(path)
   image.dataset.uploadPath = path
   image.className = 'editor-pasted-image'
   document.execCommand('insertHTML', false, image.outerHTML)
