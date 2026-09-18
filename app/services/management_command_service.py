@@ -29,16 +29,45 @@ from app.services.source_service import (
     set_target_enabled,
 )
 
-HELP_TEXT = """TG-Mirror-Bot 管理命令
+HELP_TEXT = """TG-Mirror-Bot 管理菜单
 
-/status
-/sources
-/targets
-/routes
-/stats
-/jobs [status] [数量]
-/sync <源ID|all> [数量]
-/retry_failed [任务ID]
+状态与统计
+/status  运行状态
+/stats  投递统计
+/jobs [状态] [数量]  最近任务
+
+配置查看
+/sources  搬运源
+/targets  接收目标
+/routes  路由关系
+
+运行控制
+/pause  暂停搬运
+/resume  恢复搬运
+/retry_failed [任务ID]  重试失败
+
+输入 /help all 查看完整菜单。
+"""
+
+FULL_HELP_TEXT = """TG-Mirror-Bot 完整菜单
+
+状态与统计
+/status  查看运行状态
+/stats  查看投递统计
+/jobs [状态] [数量]  查看最近任务
+
+源、目标与路由
+/sources  查看搬运源
+/targets  查看接收目标
+/routes  查看路由关系
+/sync <源ID|all> [数量]  同步历史消息
+
+运行控制
+/pause  暂停搬运
+/resume  恢复搬运
+/retry_failed [任务ID]  重试失败任务
+
+添加与开关
 /source_add [--join] <频道/群组> [...]
 /target_add <频道/群组> [...]
 /source_enable <源ID> [...]
@@ -47,11 +76,12 @@ HELP_TEXT = """TG-Mirror-Bot 管理命令
 /target_disable <目标ID> [...]
 /route_add <源ID> <目标ID> [...]
 /route_delete <源ID> <目标ID>
+
+记录接收群
 /record_add [--join] <群组> [...]
-/records
-/pause
-/resume
-/help
+/records  查看记录接收群
+
+/help  查看精简菜单
 """
 
 
@@ -91,6 +121,8 @@ class ManagementCommandService:
         """Parse and execute one command, returning a Telegram-safe response."""
         command, args = self._parse(text)
         if command in {"start", "help"}:
+            if args and args[0].lower() == "all":
+                return FULL_HELP_TEXT.strip()
             return HELP_TEXT.strip()
         if command == "status":
             return await self._status()
@@ -468,4 +500,5 @@ def truncate_response(text: str, limit: int = 3800) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
 

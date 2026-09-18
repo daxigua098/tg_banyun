@@ -154,3 +154,22 @@ def test_management_bot_command_menu_is_chinese() -> None:
     assert descriptions["status"] == "查看运行状态"
     assert descriptions["pause"] == "暂停搬运"
     assert descriptions["retry_failed"] == "重试失败任务"
+
+async def test_management_help_is_grouped_in_chinese() -> None:
+    session_factory, engine = await _build_factory()
+    config = AppConfig(
+        management_bot=ManagementBotConfig(enabled=True, admin_user_ids=[42]),
+        transfer=TransferConfig(delay_seconds=0),
+    )
+    user_client = FakeUserClient()
+    transfer = SequentialTransferService(user_client, session_factory, config)
+    service = ManagementCommandService(user_client, session_factory, transfer, config)
+
+    compact = await service.handle("/help")
+    full = await service.handle("/help all")
+
+    assert "状态与统计" in compact
+    assert "输入 /help all 查看完整菜单" in compact
+    assert "/record_add" in full
+    assert "/route_delete" in full
+    await engine.dispose()
