@@ -70,6 +70,12 @@ from app.services.settings_service import (
     get_additional_settings,
     set_additional_settings,
 )
+from app.services.upload_asset_service import (
+    UploadAssetError,
+    delete_upload_assets,
+    list_upload_assets,
+    uploads_directory,
+)
 from app.services.upload_service import UploadError, save_additional_image
 from app.services.user_service import (
     authenticate_web_user,
@@ -99,6 +105,10 @@ class EnabledUpdate(BaseModel):
 class RouteCreate(BaseModel):
     source_id: int = Field(gt=0)
     target_id: int = Field(gt=0)
+
+
+class UploadDeleteRequest(BaseModel):
+    filenames: list[str] = Field(min_length=1)
 
 
 class AdImageDefaultsUpdate(BaseModel):
@@ -389,6 +399,18 @@ def create_app() -> FastAPI:
         except UploadError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"path": path}
+
+    @app.get("/api/uploads", dependencies=[Depends(require_auth)])
+    async def list_uploads() -> list[dict[str, Any]]:
+        return list_upload_assets(PROJECT_ROOT)
+
+    @app.post("/api/uploads/delete", dependencies=[Depends(require_auth)])
+    async def delete_uploads(payload: UploadDeleteRequest) -> dict[str, int]:
+        try:
+            deleted = delete_upload_assets(PROJECT_ROOT, payload.filenames)
+        except UploadAssetError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"deleted": deleted}
 
     @app.get("/api/settings/ad-image", dependencies=[Depends(require_auth)])
     async def ad_image_defaults(
@@ -890,6 +912,11 @@ def create_app() -> FastAPI:
         await session.commit()
         return {"retried": result.rowcount or 0}
 
+    app.mount(
+        "/uploads",
+        StaticFiles(directory=uploads_directory(PROJECT_ROOT)),
+        name="uploads",
+    )
     frontend_dist = PROJECT_ROOT / "frontend" / "dist"
     if frontend_dist.exists():
         app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
@@ -898,5 +925,6 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
 
 

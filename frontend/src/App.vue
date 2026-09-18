@@ -30,6 +30,7 @@
         <el-menu-item index="additional">内容设置</el-menu-item>
         <el-menu-item index="manual_post">手动发帖</el-menu-item>
         <el-menu-item index="ad_image">广告图生成</el-menu-item>
+        <el-menu-item index="file_manager">文件管理</el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -136,6 +137,37 @@
             <el-table-column label="指定账号" min-width="180"><template #default="{ row }">{{ row.sender_whitelist.join('、') || '-' }}</template></el-table-column>
             <el-table-column label="操作" width="100">
               <template #default="{ row }"><el-button type="primary" link @click="openRule(row)">编辑</el-button></template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+
+        <el-card v-else-if="activePage === 'file_manager'">
+          <template #header>
+            <div class="filters">
+              <el-button type="danger" :disabled="!selectedUploads.length" @click="deleteSelectedUploads">
+                批量删除（{{ selectedUploads.length }}）
+              </el-button>
+              <el-button @click="loadUploadAssets">刷新</el-button>
+            </div>
+          </template>
+          <el-table :data="uploadAssets" stripe @selection-change="onUploadSelectionChange">
+            <el-table-column type="selection" width="50" />
+            <el-table-column label="预览" width="120">
+              <template #default="{ row }">
+                <el-image v-if="row.is_image" :src="row.url" :preview-src-list="[row.url]" fit="cover" style="width: 76px; height: 76px" />
+                <span v-else>文件</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="filename" label="文件名" min-width="260" />
+            <el-table-column label="大小" width="120">
+              <template #default="{ row }">{{ formatFileSize(row.size) }}</template>
+            </el-table-column>
+            <el-table-column prop="modified_at" label="上传时间" min-width="180" />
+            <el-table-column label="操作" width="150">
+              <template #default="{ row }">
+                <el-link :href="row.url" target="_blank" type="primary">下载</el-link>
+                <el-button type="danger" link @click="deleteSingleUpload(row)">删除</el-button>
+              </template>
             </el-table-column>
           </el-table>
         </el-card>
@@ -426,7 +458,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   changePassword,
   checkAuth,
@@ -442,6 +474,7 @@ import {
   generateAdImage,
   getAdImageDefaults,
   getAdditionalSettings,
+  getUploadAssets,
   sendManualPost,
   getAuditLogs,
   getControlCommands,
@@ -461,6 +494,7 @@ import {
   updateUser,
   updateAdditionalSettings,
   updateAdImageDefaults,
+  deleteUploadAssets,
   uploadAdditionalImage,
   updateRule,
 } from './api'
@@ -497,6 +531,8 @@ const additionalForm = ref({ enabled: false, text: '', image_paths: [], imagePat
 const manualForm = ref({ targetIds: [], text: '', imagePath: '' })
 const adImageForm = ref({ text: '', width: 1080, height: 1080, outputFormat: 'static', background: null })
 const adImagePreview = ref('')
+const uploadAssets = ref([])
+const selectedUploads = ref([])
 const generatingAdImage = ref(false)
 const uploadingManualImage = ref(false)
 const uploadingImage = ref(false)
@@ -548,6 +584,7 @@ async function refreshAll() {
     webUsers.value = authenticated.value && userRole.value === 'super_admin' ? await getUsers() : []
     await loadAdditionalSettings()
     await loadAdImageDefaults()
+    await loadUploadAssets()
     await loadJobs()
     lastRefresh.value = new Date().toLocaleString()
     await nextTick()
@@ -752,6 +789,37 @@ async function submitManualPost() {
   ElMessage.success('帖子已加入发送队列')
   manualForm.value = { targetIds: [], text: '', imagePath: '' }
   setTimeout(refreshAll, 1500)
+}
+
+async function loadUploadAssets() {
+  if (!authenticated.value) return
+  uploadAssets.value = await getUploadAssets()
+}
+
+function onUploadSelectionChange(rows) {
+  selectedUploads.value = rows
+}
+
+function formatFileSize(size) {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(2)} MB`
+}
+
+async function deleteUploads(filenames) {
+  if (!filenames.length) return
+  await ElMessageBox.confirm(`确定删除 ${filenames.length} 个文件吗？`, '删除确认', { type: 'warning' })
+  await deleteUploadAssets(filenames)
+  ElMessage.success('文件已删除')
+  await loadUploadAssets()
+}
+
+async function deleteSingleUpload(row) {
+  await deleteUploads([row.filename])
+}
+
+async function deleteSelectedUploads() {
+  await deleteUploads(selectedUploads.value.map((item) => item.filename))
 }
 
 async function loadAdImageDefaults() {

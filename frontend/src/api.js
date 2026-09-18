@@ -96,3 +96,8 @@ export const generateAdImage = (payload) => {
   if (payload.background) formData.append('background', payload.background)
   return api.post('/api/ad-image/generate', formData, { responseType: 'blob' })
 }
+
+export const getUploadAssets = () =>
+  api.get('/api/uploads').then((response) => response.data)
+export const deleteUploadAssets = (filenames) =>
+  api.post('/api/uploads/delete', { filenames }).then((response) => response.data)
