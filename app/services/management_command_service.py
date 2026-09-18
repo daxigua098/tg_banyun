@@ -14,6 +14,7 @@ from app.config import AppConfig
 from app.core.transfer import SequentialTransferService
 from app.models import DeliveryJob, Route, Source, Target
 from app.services.history_service import HistorySyncService
+from app.services.record_service import add_record_target, list_record_targets
 from app.services.source_service import (
     add_route,
     add_source,
@@ -44,6 +45,8 @@ HELP_TEXT = """TG-Mirror-Bot 管理命令
 /target_disable <目标ID> [...]
 /route_add <源ID> <目标ID> [...]
 /route_delete <源ID> <目标ID>
+/record_add [--join] <群组> [...]
+/records
 /help
 """
 
@@ -93,6 +96,8 @@ class ManagementCommandService:
             return await self._targets()
         if command == "routes":
             return await self._routes()
+        if command == "records":
+            return await self._records()
         if command == "stats":
             return await self._stats()
         if command == "jobs":
@@ -117,6 +122,8 @@ class ManagementCommandService:
             return await self._route_add(args)
         if command == "route_delete":
             return await self._route_delete(args)
+        if command == "record_add":
+            return await self._record_add(args)
         return f"未知命令：/{command}\n\n{HELP_TEXT.strip()}"
 
     @staticmethod
@@ -198,6 +205,43 @@ class ManagementCommandService:
         if len(routes) > 50:
             lines.append(f"... 仅显示前 50 条，共 {len(routes)} 条")
         return "\n".join(lines)
+
+    async def _records(self) -> str:
+        async with self.session_factory() as session:
+            record_targets = await list_record_targets(session)
+        if not record_targets:
+            return "尚未配置搬运记录接收群。"
+        lines = ["搬运记录接收群（ID / 状态 / 名称）"]
+        for record_target in record_targets:
+            lines.append(
+                f"{record_target.id} / "
+                f"{'启用' if record_target.enabled else '禁用'} / "
+                f"{record_target.title or record_target.raw_input}"
+            )
+        return "\n".join(lines)
+
+    async def _record_add(self, args: list[str]) -> str:
+        if not args:
+            raise ValueError("用法：/record_add [--join] <群组> [...]")
+        join = "--join" in args
+        inputs = [item for item in args if item != "--join"]
+        if not inputs:
+            raise ValueError("请至少提供一个记录接收群。")
+        async with self._operation_context():
+            async with self.session_factory() as session:
+                results = []
+                for raw_input in inputs:
+                    record_target = await add_record_target(
+                        session,
+                        self.user_client,
+                        raw_input,
+                        join=join,
+                    )
+                    results.append(
+                        f"[{record_target.id}] "
+                        f"{record_target.title or record_target.raw_input}"
+                    )
+        return "记录接收群已添加：\n" + "\n".join(results)
 
     async def _stats(self) -> str:
         stats = await self.transfer.stats()

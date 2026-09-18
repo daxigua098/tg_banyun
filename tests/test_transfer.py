@@ -15,12 +15,16 @@ from telethon.errors import MessageIdInvalidError
 
 from app.config import AppConfig, TransferConfig
 from app.core.transfer import SequentialTransferService
-from app.models import Base, DeliveryJob, Route, Source, Target
+from app.models import Base, DeliveryJob, RecordTarget, Route, Source, Target
 
 
 class FakeTelegramClient:
     def __init__(self) -> None:
         self.calls: list[tuple[int, int]] = []
+        self.messages: list[tuple[int, str]] = []
+
+    async def send_message(self, entity: int, text: str) -> None:
+        self.messages.append((int(entity), text))
 
     async def forward_messages(
         self,
@@ -165,5 +169,50 @@ async def test_invalid_source_message_is_not_retried() -> None:
         assert job.status == "failed"
         assert job.attempt_count == 1
         assert job.next_retry_at is None
+
+    await engine.dispose()
+
+
+async def test_successful_delivery_sends_record_message() -> None:
+    session_factory, engine = await _build_factory()
+    fake_client = FakeTelegramClient()
+    config = AppConfig(transfer=TransferConfig(delay_seconds=0))
+
+    async with session_factory() as session:
+        source = Source(
+            raw_input="@source",
+            normalized_key="username:source",
+            tg_id=100,
+            title="Source",
+        )
+        target = Target(
+            raw_input="@target",
+            normalized_key="username:target",
+            tg_id=201,
+            title="Target",
+        )
+        record_target = RecordTarget(
+            raw_input="@records",
+            normalized_key="username:records",
+            tg_id=301,
+            title="Records",
+        )
+        session.add_all([source, target, record_target])
+        await session.commit()
+        session.add(Route(source_id=source.id, target_id=target.id))
+        await session.commit()
+        source_id = source.id
+
+    service = SequentialTransferService(fake_client, session_factory, config)
+    await service.enqueue_message(source_id, 99)
+    await service.process_pending()
+
+    assert fake_client.calls == [(201, 99)]
+    assert len(fake_client.messages) == 1
+    record_entity, text = fake_client.messages[0]
+    assert record_entity == 301
+    assert "搬运记录" in text
+    assert "状态：成功" in text
+    assert "源消息：99" in text
 
     await engine.dispose()

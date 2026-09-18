@@ -159,3 +159,21 @@ class DeliveryJob(TimestampMixin, Base):
 
     source: Mapped[Source] = relationship()
     target: Mapped[Target] = relationship()
+
+class RecordTarget(TimestampMixin, Base):
+    """A Telegram chat that receives human-readable delivery records."""
+
+    __tablename__ = "record_targets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    raw_input: Mapped[str] = mapped_column(String(512))
+    normalized_key: Mapped[str] = mapped_column(String(512), unique=True, index=True)
+    tg_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        unique=True,
+        nullable=True,
+        index=True,
+    )
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)

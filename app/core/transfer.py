@@ -14,7 +14,7 @@ from telethon import TelegramClient
 from telethon.errors import FloodWaitError, MessageIdInvalidError
 
 from app.config import AppConfig
-from app.models import DeliveryJob, Route, Source, Target
+from app.models import DeliveryJob, RecordTarget, Route, Source, Target
 
 
 class SequentialTransferService:
@@ -171,6 +171,7 @@ class SequentialTransferService:
                 job.sent_at = datetime.now(UTC)
                 job.target_message_id = self._result_message_id(result)
                 await session.commit()
+                await self._send_delivery_record(source, target, job)
                 logger.info(
                     "Delivered source={} message={} target={} as message={}",
                     source.id,
@@ -183,6 +184,7 @@ class SequentialTransferService:
                 job.last_error = f"FloodWait: {exc.seconds}s"
                 job.next_retry_at = datetime.now(UTC) + timedelta(seconds=exc.seconds)
                 await session.commit()
+                await self._send_delivery_record(source, target, job)
                 logger.warning(
                     "Telegram FloodWait for source={} message={} target={}: {}s",
                     source.id,
@@ -195,6 +197,7 @@ class SequentialTransferService:
                 job.next_retry_at = None
                 job.last_error = f"MessageIdInvalid: {exc}"[:2000]
                 await session.commit()
+                await self._send_delivery_record(source, target, job)
                 logger.warning(
                     "Skipping invalid Telegram message source={} message={} target={}",
                     source.id,
@@ -214,6 +217,7 @@ class SequentialTransferService:
                     job.next_retry_at = datetime.now(UTC) + timedelta(seconds=delay)
                 job.last_error = message
                 await session.commit()
+                await self._send_delivery_record(source, target, job)
                 logger.error(
                     "Delivery failed source={} message={} target={} attempt={}/{} error={}",
                     source.id,
@@ -228,6 +232,62 @@ class SequentialTransferService:
                     source.id,
                     job.source_message_id,
                     target.id,
+                )
+
+    @staticmethod
+    def format_delivery_record(source: Source, target: Target, job: DeliveryJob) -> str:
+        """Build a human-readable delivery record."""
+        status_names = {
+            "retrying": "等待重试",
+            "success": "成功",
+            "failed": "失败",
+        }
+        status = status_names.get(job.status, job.status)
+        target_message = job.target_message_id or "-"
+        error = job.last_error or "-"
+        return (
+            "搬运记录\n"
+            f"状态：{status}\n"
+            f"源：{source.title or source.raw_input} (ID {source.id})\n"
+            f"源消息：{job.source_message_id}\n"
+            f"目标：{target.title or target.raw_input} (ID {target.id})\n"
+            f"目标消息：{target_message}\n"
+            f"尝试：{job.attempt_count}/{job.max_attempts}\n"
+            f"错误：{error}"
+        )
+
+    async def _send_delivery_record(
+        self,
+        source: Source,
+        target: Target,
+        job: DeliveryJob,
+    ) -> None:
+        async with self.session_factory() as session:
+            record_targets = list(
+                await session.scalars(
+                    select(RecordTarget)
+                    .where(RecordTarget.enabled.is_(True))
+                    .order_by(RecordTarget.id.asc())
+                )
+            )
+        if not record_targets:
+            return
+
+        text = self.format_delivery_record(source, target, job)
+        for record_target in record_targets:
+            record_entity = record_target.tg_id or record_target.raw_input
+            try:
+                if self.operation_lock is None:
+                    await self.client.send_message(record_entity, text)
+                else:
+                    async with self.operation_lock:
+                        await self.client.send_message(record_entity, text)
+            except Exception as exc:  # noqa: BLE001 - records must not break delivery
+                logger.error(
+                    "Failed to send delivery record target={} error={}: {}",
+                    record_target.id,
+                    type(exc).__name__,
+                    exc,
                 )
 
     async def _forward_message(self, source: Source, target: Target, message_id: int) -> Any:

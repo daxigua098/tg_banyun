@@ -27,6 +27,11 @@ from app.models import DeliveryJob, Route, Source, Target
 from app.services.history_service import HistorySyncService
 from app.services.management_bot_service import ManagementBotService
 from app.services.management_command_service import ManagementCommandService
+from app.services.record_service import (
+    add_record_target,
+    list_record_targets,
+    set_record_target_enabled,
+)
 from app.services.runtime_service import RuntimeService
 from app.services.source_service import (
     add_route,
@@ -191,6 +196,49 @@ async def command_target_list(args: argparse.Namespace) -> None:
         return
     for target in targets:
         _print_target(target)
+
+
+async def command_record_add(args: argparse.Namespace) -> None:
+    config, session_factory = await _prepare(args.config)
+
+    async def run(client: Any) -> None:
+        async with session_factory() as session:
+            for raw_input in args.inputs:
+                record_target = await add_record_target(
+                    session,
+                    client,
+                    raw_input,
+                    join=args.join,
+                )
+                print(f"Record target [{record_target.id}] {record_target.title}")
+
+    await _with_client(config, run)
+
+
+async def command_record_list(args: argparse.Namespace) -> None:
+    _, session_factory = await _prepare(args.config)
+    async with session_factory() as session:
+        record_targets = await list_record_targets(session)
+    if not record_targets:
+        print("No record targets configured.")
+        return
+    for record_target in record_targets:
+        print(
+            f"{record_target.id:>4}  enabled={str(record_target.enabled):<5} "
+            f"{record_target.title or record_target.raw_input}"
+        )
+
+
+async def command_record_set_enabled(args: argparse.Namespace) -> None:
+    _, session_factory = await _prepare(args.config)
+    async with session_factory() as session:
+        target = await set_record_target_enabled(
+            session,
+            args.target_id,
+            args.enabled,
+        )
+    state = "enabled" if target.enabled else "disabled"
+    print(f"Record target [{target.id}] is now {state}.")
 
 
 async def command_route_add(args: argparse.Namespace) -> None:
@@ -382,6 +430,23 @@ def build_parser() -> argparse.ArgumentParser:
     route_add.add_argument("--target", dest="targets", type=int, nargs="+", required=True)
     route_sub.add_parser("list", help="List routes")
 
+    record = subparsers.add_parser("record", help="Manage delivery record receivers")
+    record_sub = record.add_subparsers(dest="record_command", required=True)
+    record_add = record_sub.add_parser("add", help="Add record receiving chats")
+    record_add.add_argument("inputs", nargs="+")
+    record_add.add_argument(
+        "--join",
+        action="store_true",
+        help="Join public/private chats before adding them",
+    )
+    record_sub.add_parser("list", help="List record receiving chats")
+    record_enable = record_sub.add_parser("enable", help="Enable a record receiver")
+    record_enable.add_argument("target_id", type=int)
+    record_enable.set_defaults(enabled=True)
+    record_disable = record_sub.add_parser("disable", help="Disable a record receiver")
+    record_disable.add_argument("target_id", type=int)
+    record_disable.set_defaults(enabled=False)
+
     sync_history = subparsers.add_parser("sync-history", help="Synchronize historical messages")
     sync_history_group = sync_history.add_mutually_exclusive_group(required=True)
     sync_history_group.add_argument("--all", action="store_true")
@@ -421,6 +486,13 @@ async def _dispatch(args: argparse.Namespace) -> None:
             await command_route_add(args)
         else:
             await command_route_list(args)
+    elif args.command == "record":
+        if args.record_command == "add":
+            await command_record_add(args)
+        elif args.record_command == "list":
+            await command_record_list(args)
+        else:
+            await command_record_set_enabled(args)
     elif args.command == "sync-history":
         await command_sync_history(args)
     elif args.command == "run":

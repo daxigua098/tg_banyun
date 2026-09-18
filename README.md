@@ -82,6 +82,17 @@ python main.py route list
 
 这条路由表示：源 `1` 的每条消息依次投递到目标 `1`、目标 `2`。
 
+## 搬运记录群
+
+可以指定一个或多个 Telegram 群组接收每次投递的文字记录。Userbot 必须先加入私有群，或者使用 `--join`：
+
+```powershell
+python main.py record add --join "https://t.me/+record_group_invite"
+python main.py record list
+```
+
+记录内容包括投递状态、源、源消息 ID、目标、目标消息 ID、尝试次数和错误信息。记录发送失败不会影响正常搬运。
+
 ## 运行
 
 首次补齐历史消息：
@@ -183,6 +194,8 @@ python main.py bot
 /target_disable <目标ID> [...]
 /route_add <源ID> <目标ID> [...]
 /route_delete <源ID> <目标ID>
+/record_add [--join] <群组> [...]
+/records
 /help
 ```
 
