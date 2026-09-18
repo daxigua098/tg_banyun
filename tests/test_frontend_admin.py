@@ -30,6 +30,9 @@ def test_route_builder_has_clear_source_and_target_labels() -> None:
     assert 'class="route-builder"' in source
     assert 'class="route-endpoint-label source">搬运源<' in source
     assert 'class="route-endpoint-label target">接收目标<' in source
-    assert '建立搭配关系' in source
-    assert 'sourceName(row.source_id)' in source
+    assert '批量建立搭配关系' in source
+    assert '请选择一个或多个搬运源' in source
+    assert '请选择一个或多个接收目标' in source
+    assert 'routePreviewCount' in source
+    assert 'sourceName(group.source_id)' in source
     assert 'targetName(row.target_id)' in source

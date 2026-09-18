@@ -224,3 +224,37 @@ def test_frontend_index_is_not_cached(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store, no-cache, must-revalidate"
     assert response.headers["pragma"] == "no-cache"
+
+
+def test_batch_route_endpoint_returns_created_and_skipped_counts(monkeypatch) -> None:
+    config = load_config()
+    config.web.api_token = ""
+    config.web.admin_password = ""
+    config.web.session_secret = ""
+    monkeypatch.setattr(api_main, "load_config", lambda: config)
+    captured: dict[str, object] = {}
+
+    async def fake_add_routes_bulk(session, source_ids, target_ids):
+        captured["source_ids"] = source_ids
+        captured["target_ids"] = target_ids
+        return (
+            [
+                SimpleNamespace(id=1, source_id=10, target_id=20, enabled=True),
+                SimpleNamespace(id=2, source_id=10, target_id=21, enabled=True),
+            ],
+            [(11, 20)],
+        )
+
+    monkeypatch.setattr(api_main, "add_routes_bulk", fake_add_routes_bulk)
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/routes/batch",
+            json={"source_ids": [10, 11], "target_ids": [20, 21]},
+        )
+
+    assert response.status_code == 200
+    assert captured == {"source_ids": [10, 11], "target_ids": [20, 21]}
+    assert response.json()["created_count"] == 2
+    assert response.json()["skipped_count"] == 1
+    assert response.json()["skipped"] == [{"source_id": 11, "target_id": 20}]

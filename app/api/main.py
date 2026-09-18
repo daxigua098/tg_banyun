@@ -78,6 +78,7 @@ from app.services.settings_service import (
     get_additional_settings,
     set_additional_settings,
 )
+from app.services.source_service import add_routes_bulk
 from app.services.upload_asset_service import (
     UploadAssetError,
     delete_upload_assets,
@@ -113,6 +114,11 @@ class EnabledUpdate(BaseModel):
 class RouteCreate(BaseModel):
     source_id: int = Field(gt=0)
     target_id: int = Field(gt=0)
+
+
+class RouteBatchCreate(BaseModel):
+    source_ids: list[int] = Field(min_length=1, max_length=200)
+    target_ids: list[int] = Field(min_length=1, max_length=200)
 
 
 class UploadDeleteRequest(BaseModel):
@@ -615,6 +621,37 @@ def create_app() -> FastAPI:
             "source_id": route.source_id,
             "target_id": route.target_id,
             "enabled": route.enabled,
+        }
+
+    @app.post("/api/routes/batch", dependencies=[Depends(require_auth)])
+    async def create_routes_batch(
+        payload: RouteBatchCreate,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        try:
+            created, skipped = await add_routes_bulk(
+                session,
+                payload.source_ids,
+                payload.target_ids,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "created_count": len(created),
+            "skipped_count": len(skipped),
+            "created": [
+                {
+                    "id": route.id,
+                    "source_id": route.source_id,
+                    "target_id": route.target_id,
+                    "enabled": route.enabled,
+                }
+                for route in created
+            ],
+            "skipped": [
+                {"source_id": source_id, "target_id": target_id}
+                for source_id, target_id in skipped
+            ],
         }
 
     @app.delete("/api/routes/{route_id}", dependencies=[Depends(require_auth)])

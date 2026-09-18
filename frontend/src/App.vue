@@ -111,7 +111,7 @@
           <div class="route-builder">
             <div class="route-endpoint-card route-source-card">
               <div class="route-endpoint-label source">搬运源</div>
-              <el-select v-model="newRoute.source_id" class="route-select" placeholder="请选择搬运源" filterable>
+              <el-select v-model="newRoute.source_ids" class="route-select" placeholder="请选择一个或多个搬运源" multiple collapse-tags collapse-tags-tooltip filterable>
                 <el-option
                   v-for="source in sources"
                   :key="source.id"
@@ -125,7 +125,7 @@
 
             <div class="route-endpoint-card route-target-card">
               <div class="route-endpoint-label target">接收目标</div>
-              <el-select v-model="newRoute.target_id" class="route-select" placeholder="请选择接收目标" filterable>
+              <el-select v-model="newRoute.target_ids" class="route-select" placeholder="请选择一个或多个接收目标" multiple collapse-tags collapse-tags-tooltip filterable>
                 <el-option
                   v-for="target in targets"
                   :key="target.id"
@@ -135,9 +135,27 @@
               </el-select>
             </div>
 
-            <el-button class="route-create-button" type="primary" size="large" @click="addRoute">
-              建立搭配关系
+            <el-button class="route-create-button" type="primary" size="large" @click="addRoutes">
+              批量建立搭配关系
             </el-button>
+          </div>
+
+          <div class="route-preview" v-if="routePreviewCount">
+            <div class="route-preview-title">
+              将建立 {{ routePreviewCount }} 条搭配关系
+              <span class="route-preview-warning" v-if="routePreviewCount > 20">数量较多，提交时会再次确认</span>
+            </div>
+            <div class="route-preview-list">
+              <el-tag v-for="pair in routePreviewVisible" :key="`${pair.source_id}-${pair.target_id}`" effect="plain">
+                {{ pair.label }}
+              </el-tag>
+              <span class="route-preview-more" v-if="routePreviewCount > routePreviewVisible.length">
+                还有 {{ routePreviewCount - routePreviewVisible.length }} 条
+              </span>
+            </div>
+          </div>
+          <div class="route-preview route-preview-empty" v-else>
+            请选择搬运源和接收目标，系统会在这里预览即将建立的搭配关系。
           </div>
 
           <el-alert
@@ -148,34 +166,35 @@
             show-icon
           />
 
-          <el-table :data="routes" stripe>
-            <el-table-column prop="id" label="ID" width="70" />
-            <el-table-column label="搬运源" min-width="240">
-              <template #default="{ row }">
-                <el-tag type="primary" effect="plain">源</el-tag>
-                <span class="route-cell-name">{{ sourceName(row.source_id) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="方向" width="80" align="center">
-              <template #default><span class="route-table-arrow">→</span></template>
-            </el-table-column>
-            <el-table-column label="接收目标" min-width="240">
-              <template #default="{ row }">
-                <el-tag type="success" effect="plain">目标</el-tag>
-                <span class="route-cell-name">{{ targetName(row.target_id) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="110">
-              <template #default="{ row }">
-                <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '已启用' : '已停用' }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="100">
-              <template #default="{ row }">
-                <el-button type="danger" link @click="removeRoute(row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+          <div v-if="routeGroups.length" class="route-groups">
+            <div v-for="group in routeGroups" :key="group.source_id" class="route-group">
+              <div class="route-group-header">
+                <el-tag type="primary" effect="dark">搬运源</el-tag>
+                <strong>{{ sourceName(group.source_id) }}</strong>
+                <span class="route-group-count">{{ group.routes.length }} 个接收目标</span>
+              </div>
+              <el-table :data="group.routes" stripe>
+                <el-table-column prop="id" label="路由 ID" width="90" />
+                <el-table-column label="接收目标" min-width="300">
+                  <template #default="{ row }">
+                    <el-tag type="success" effect="plain">目标</el-tag>
+                    <span class="route-cell-name">{{ targetName(row.target_id) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="状态" width="110">
+                  <template #default="{ row }">
+                    <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '已启用' : '已停用' }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="100">
+                  <template #default="{ row }">
+                    <el-button type="danger" link @click="removeRoute(row)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+          <el-empty v-else description="还没有建立搬运搭配关系" />
         </el-card>
 
         <el-card v-else-if="activePage === 'rules'">
@@ -578,7 +597,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   changePassword,
   checkAuth,
-  createRoute,
+  createRoutesBatch,
   login as loginRequest,
   logoutAllSessions,
   logoutSession,
@@ -629,7 +648,33 @@ const jobStatus = ref('')
 const loading = ref(false)
 const lastRefresh = ref('')
 const chartElement = ref(null)
-const newRoute = ref({ source_id: null, target_id: null })
+const newRoute = ref({ source_ids: [], target_ids: [] })
+
+const routePreviewPairs = computed(() => {
+  const pairs = []
+  for (const sourceId of newRoute.value.source_ids) {
+    for (const targetId of newRoute.value.target_ids) {
+      pairs.push({
+        source_id: sourceId,
+        target_id: targetId,
+        label: `${sourceName(sourceId)} → ${targetName(targetId)}`,
+      })
+    }
+  }
+  return pairs
+})
+const routePreviewVisible = computed(() => routePreviewPairs.value.slice(0, 30))
+const routePreviewCount = computed(() => routePreviewPairs.value.length)
+const routeGroups = computed(() => {
+  const groups = new Map()
+  for (const route of routes.value) {
+    if (!groups.has(route.source_id)) {
+      groups.set(route.source_id, { source_id: route.source_id, routes: [] })
+    }
+    groups.get(route.source_id).routes.push(route)
+  }
+  return [...groups.values()].sort((left, right) => left.source_id - right.source_id)
+})
 const commands = ref([])
 let queueTimer = null
 const auditLogs = ref([])
@@ -814,14 +859,22 @@ function targetName(targetId) {
   return target ? `${target.display_name || target.title}（ID ${target.id}）` : `目标 ${targetId}`
 }
 
-async function addRoute() {
-  if (!newRoute.value.source_id || !newRoute.value.target_id) {
-    ElMessage.warning('请选择源和目标')
+async function addRoutes() {
+  if (!newRoute.value.source_ids.length || !newRoute.value.target_ids.length) {
+    ElMessage.warning('请至少选择一个搬运源和一个接收目标')
     return
   }
-  await createRoute(newRoute.value.source_id, newRoute.value.target_id)
-  ElMessage.success('搬运搭配关系已建立')
-  newRoute.value = { source_id: null, target_id: null }
+  const total = routePreviewCount.value
+  if (total > 20) {
+    await ElMessageBox.confirm(
+      `将一次建立 ${total} 条搬运搭配关系，数量较多，可能增加发送频率压力。确定继续吗？`,
+      '批量建立确认',
+      { type: 'warning' },
+    )
+  }
+  const result = await createRoutesBatch(newRoute.value.source_ids, newRoute.value.target_ids)
+  ElMessage.success(`新增 ${result.created_count} 条，跳过 ${result.skipped_count} 条已存在关系`)
+  newRoute.value = { source_ids: [], target_ids: [] }
   await refreshAll()
 }
 

@@ -174,6 +174,56 @@ async def add_route(
     return route
 
 
+async def add_routes_bulk(
+    session: AsyncSession,
+    source_ids: list[int],
+    target_ids: list[int],
+) -> tuple[list[Route], list[tuple[int, int]]]:
+    """Create missing source-target route pairs in one transaction."""
+    unique_source_ids = list(dict.fromkeys(source_ids))
+    unique_target_ids = list(dict.fromkeys(target_ids))
+    if not unique_source_ids or not unique_target_ids:
+        raise ValueError("至少需要一个搬运源和一个接收目标。")
+
+    existing_source_ids = set(
+        await session.scalars(select(Source.id).where(Source.id.in_(unique_source_ids)))
+    )
+    missing_sources = [item for item in unique_source_ids if item not in existing_source_ids]
+    if missing_sources:
+        raise ValueError(f"搬运源不存在：{', '.join(str(item) for item in missing_sources)}")
+
+    existing_target_ids = set(
+        await session.scalars(select(Target.id).where(Target.id.in_(unique_target_ids)))
+    )
+    missing_targets = [item for item in unique_target_ids if item not in existing_target_ids]
+    if missing_targets:
+        raise ValueError(f"接收目标不存在：{', '.join(str(item) for item in missing_targets)}")
+
+    rows = await session.execute(
+        select(Route.source_id, Route.target_id).where(
+            Route.source_id.in_(unique_source_ids),
+            Route.target_id.in_(unique_target_ids),
+        )
+    )
+    existing_pairs = {(int(row[0]), int(row[1])) for row in rows.all()}
+    created: list[Route] = []
+    skipped: list[tuple[int, int]] = []
+    for source_id in unique_source_ids:
+        for target_id in unique_target_ids:
+            pair = (source_id, target_id)
+            if pair in existing_pairs:
+                skipped.append(pair)
+                continue
+            route = Route(source_id=source_id, target_id=target_id)
+            session.add(route)
+            created.append(route)
+
+    await session.commit()
+    for route in created:
+        await session.refresh(route)
+    return created, skipped
+
+
 async def list_sources(session: AsyncSession) -> list[Source]:
     """List sources in deterministic processing order."""
     result = await session.scalars(

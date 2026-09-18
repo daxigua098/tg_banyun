@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.models import Base
+from app.models import Base, Route, Source, Target
 from app.services import source_service
 
 
@@ -91,4 +91,46 @@ async def test_add_source_joins_private_invite(monkeypatch) -> None:
 
     assert source.tg_id == 888
     assert source.title == "Private Source"
+    await engine.dispose()
+
+
+async def test_add_routes_bulk_builds_cartesian_pairs_and_skips_duplicates() -> None:
+    session_factory, engine = await _build_factory()
+    async with session_factory() as session:
+        sources = [
+            Source(raw_input="@one", normalized_key="username:one", tg_id=1, title="One"),
+            Source(raw_input="@two", normalized_key="username:two", tg_id=2, title="Two"),
+        ]
+        targets = [
+            Target(raw_input="@x", normalized_key="username:x", tg_id=11, title="X"),
+            Target(raw_input="@y", normalized_key="username:y", tg_id=12, title="Y"),
+        ]
+        session.add_all([*sources, *targets])
+        await session.commit()
+        source_ids = [source.id for source in sources]
+        target_ids = [target.id for target in targets]
+        session.add(Route(source_id=source_ids[0], target_id=target_ids[0]))
+        await session.commit()
+
+        created, skipped = await source_service.add_routes_bulk(
+            session,
+            source_ids,
+            target_ids,
+        )
+        assert len(created) == 3
+        assert sorted(skipped) == [(source_ids[0], target_ids[0])]
+
+        created_again, skipped_again = await source_service.add_routes_bulk(
+            session,
+            source_ids,
+            target_ids,
+        )
+
+    assert created_again == []
+    assert sorted(skipped_again) == [
+        (source_ids[0], target_ids[0]),
+        (source_ids[0], target_ids[1]),
+        (source_ids[1], target_ids[0]),
+        (source_ids[1], target_ids[1]),
+    ]
     await engine.dispose()
