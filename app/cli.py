@@ -259,11 +259,18 @@ async def command_run(args: argparse.Namespace) -> None:
             config,
             operation_lock=operation_lock,
         )
+        runtime_config = config
+        if args.skip_history:
+            runtime_config = config.model_copy(
+                update={
+                    "history": config.history.model_copy(update={"enabled": False})
+                }
+            )
         runtime = RuntimeService(
             client,
             session_factory,
             transfer,
-            config,
+            runtime_config,
             operation_lock=operation_lock,
         )
 
@@ -381,7 +388,12 @@ def build_parser() -> argparse.ArgumentParser:
     sync_history_group.add_argument("--source", type=int)
     sync_history.add_argument("--limit", type=int, default=None)
 
-    subparsers.add_parser("run", help="Run userbot and management bot if enabled")
+    run = subparsers.add_parser("run", help="Run userbot and management bot if enabled")
+    run.add_argument(
+        "--skip-history",
+        action="store_true",
+        help="Do not run automatic history catch-up at startup",
+    )
     subparsers.add_parser("bot", help="Run only the management bot")
     subparsers.add_parser("stats", help="Show delivery statistics")
     return parser

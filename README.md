@@ -96,6 +96,12 @@ python main.py sync-history --all --limit 500
 python main.py run
 ```
 
+如果已经手动执行过历史同步，只希望启动后监听新消息：
+
+```powershell
+python main.py run --skip-history
+```
+
 查看投递统计：
 
 ```powershell
@@ -139,6 +145,12 @@ management_bot:
 
 ```powershell
 python main.py run
+```
+
+如果已经手动执行过历史同步，只希望启动后监听新消息：
+
+```powershell
+python main.py run --skip-history
 ```
 
 程序会同时启动：
