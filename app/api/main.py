@@ -113,6 +113,10 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok", "time": datetime.now(UTC).isoformat(timespec="seconds")}
 
+    @app.get("/api/auth/check", dependencies=[Depends(require_auth)])
+    async def auth_check() -> dict[str, bool]:
+        return {"authenticated": True}
+
     @app.get("/api/status", dependencies=[Depends(require_auth)])
     async def status(session: AsyncSession = Depends(session_dependency)) -> dict[str, Any]:
         config: AppConfig = app.state.config

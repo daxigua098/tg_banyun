@@ -1,5 +1,14 @@
 <template>
-  <el-container class="app-shell">
+  <div v-if="!authenticated" class="login-shell">
+    <el-card class="login-card">
+      <h1>TG-Mirror-Bot 管理后台</h1>
+      <p>请输入管理员 API Token</p>
+      <el-input v-model="tokenInput" type="password" show-password placeholder="ADMIN_API_TOKEN" @keyup.enter="login" />
+      <el-button type="primary" class="login-button" @click="login">登录</el-button>
+    </el-card>
+  </div>
+
+  <el-container v-else class="app-shell">
     <el-aside width="220px" class="sidebar">
       <div class="brand">
         <div class="brand-title">TG-Mirror-Bot</div>
@@ -27,6 +36,7 @@
           <el-button type="warning" :disabled="status?.paused" @click="pause">暂停</el-button>
           <el-button type="success" :disabled="!status?.paused" @click="resume">恢复</el-button>
           <el-button type="danger" plain @click="retry">重试失败</el-button>
+          <el-button plain @click="logout">退出登录</el-button>
         </div>
       </el-header>
 
@@ -201,6 +211,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import {
+  checkAuth,
   createRoute,
   deleteRoute,
   enqueueAddSource,
@@ -221,6 +232,8 @@ import {
   updateRule,
 } from './api'
 
+const authenticated = ref(Boolean(localStorage.getItem('admin_api_token')))
+const tokenInput = ref('')
 const activePage = ref('dashboard')
 const status = ref(null)
 const sources = ref([])
@@ -282,7 +295,12 @@ async function refreshAll() {
     await nextTick()
     renderChart()
   } catch (error) {
-    ElMessage.error(error.response?.data?.detail || error.message || '加载失败')
+    if (error.response?.status === 401) {
+      logout(false)
+      ElMessage.error('管理令牌无效，请重新登录')
+    } else {
+      ElMessage.error(error.response?.data?.detail || error.message || '加载失败')
+    }
   } finally {
     loading.value = false
   }
@@ -400,10 +418,36 @@ async function queueSync() {
   await refreshAll()
 }
 
+async function login() {
+  if (!tokenInput.value) {
+    ElMessage.warning('请输入管理员 Token')
+    return
+  }
+  localStorage.setItem('admin_api_token', tokenInput.value)
+  try {
+    await checkAuth()
+    authenticated.value = true
+    tokenInput.value = ''
+    await refreshAll()
+  } catch (error) {
+    localStorage.removeItem('admin_api_token')
+    authenticated.value = false
+    ElMessage.error('登录失败，请检查 Token')
+  }
+}
+
+function logout(showMessage = true) {
+  localStorage.removeItem('admin_api_token')
+  authenticated.value = false
+  if (showMessage) ElMessage.success('已退出登录')
+}
+
 function selectPage(index) {
   activePage.value = index
   nextTick(renderChart)
 }
 
-onMounted(refreshAll)
+onMounted(() => {
+  if (authenticated.value) refreshAll()
+})
 </script>
