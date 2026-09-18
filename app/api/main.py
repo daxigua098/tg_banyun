@@ -7,8 +7,20 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,12 +28,19 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import PROJECT_ROOT, AdditionalConfig, AppConfig, load_config
+from app.config import PROJECT_ROOT, AdditionalConfig, AdImageConfig, AppConfig, load_config
 from app.core.auth import create_session_token, verify_session_token
 from app.core.heartbeat import is_process_running, read_runtime_status
 from app.core.runtime_control import is_runtime_paused, set_runtime_paused
 from app.database import dispose_database, get_session_factory, init_database
 from app.models import DeliveryJob, Route, Source, Target
+from app.services.ad_image_service import (
+    AdImageError,
+    generate_dynamic_ad,
+    generate_static_ad,
+    get_ad_image_defaults,
+    set_ad_image_defaults,
+)
 from app.services.audit_service import list_audit_logs, write_audit_log
 from app.services.control_command_service import (
     COMMAND_ADD_SOURCE,
@@ -80,6 +99,11 @@ class EnabledUpdate(BaseModel):
 class RouteCreate(BaseModel):
     source_id: int = Field(gt=0)
     target_id: int = Field(gt=0)
+
+
+class AdImageDefaultsUpdate(BaseModel):
+    default_width: int = Field(default=1080, ge=256, le=4096)
+    default_height: int = Field(default=1080, ge=256, le=4096)
 
 
 class AdditionalSettingsUpdate(BaseModel):
@@ -365,6 +389,47 @@ def create_app() -> FastAPI:
         except UploadError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"path": path}
+
+    @app.get("/api/settings/ad-image", dependencies=[Depends(require_auth)])
+    async def ad_image_defaults(
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        settings = await get_ad_image_defaults(session, config.ad_image)
+        return settings.model_dump()
+
+    @app.put("/api/settings/ad-image", dependencies=[Depends(require_auth)])
+    async def update_ad_image_defaults(
+        payload: AdImageDefaultsUpdate,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        settings = await set_ad_image_defaults(
+            session,
+            AdImageConfig.model_validate(payload.model_dump()),
+        )
+        return settings.model_dump()
+
+    @app.post("/api/ad-image/generate", dependencies=[Depends(require_auth)])
+    async def generate_ad_image(
+        text: str = Form(...),
+        width: int = Form(...),
+        height: int = Form(...),
+        output_format: str = Form(default="static"),
+        background: UploadFile | None = File(default=None),
+    ) -> Response:
+        background_bytes = await background.read() if background is not None else None
+        try:
+            if output_format == "dynamic":
+                content = generate_dynamic_ad(text, width, height, background_bytes)
+                media_type = "image/gif"
+                extension = "gif"
+            else:
+                content = generate_static_ad(text, width, height, background_bytes)
+                media_type = "image/png"
+                extension = "png"
+        except (AdImageError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        headers = {"Content-Disposition": f'inline; filename="ad-{uuid4().hex}.{extension}"'}
+        return Response(content=content, media_type=media_type, headers=headers)
 
     @app.get("/api/settings/additional", dependencies=[Depends(require_auth)])
     async def additional_settings(
@@ -833,4 +898,5 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
 

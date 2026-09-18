@@ -114,6 +114,13 @@ class AdditionalConfig(BaseModel):
     image_caption: str = ""
 
 
+class AdImageConfig(BaseModel):
+    """Default dimensions for generated advertisement images."""
+
+    default_width: int = Field(default=1080, ge=256, le=4096)
+    default_height: int = Field(default=1080, ge=256, le=4096)
+
+
 class BackupConfig(BaseModel):
     """Automatic backup scheduling and retention."""
 
@@ -170,6 +177,7 @@ class AppConfig(BaseModel):
     history: HistoryConfig = Field(default_factory=HistoryConfig)
     content_filter: ContentFilterConfig = Field(default_factory=ContentFilterConfig)
     additional: AdditionalConfig = Field(default_factory=AdditionalConfig)
+    ad_image: AdImageConfig = Field(default_factory=AdImageConfig)
     backup: BackupConfig = Field(default_factory=BackupConfig)
     alerts: AlertConfig = Field(default_factory=AlertConfig)
     web: WebConfig = Field(default_factory=WebConfig)
@@ -231,3 +239,4 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     web["session_secret"] = os.getenv("ADMIN_SESSION_SECRET", web.get("session_secret", ""))
 
     return AppConfig.model_validate(raw)
+

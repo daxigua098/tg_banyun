@@ -82,3 +82,17 @@ export const uploadAdditionalImage = (file) => {
 
 export const sendManualPost = (payload) =>
   api.post('/api/control/manual-post', payload).then((response) => response.data)
+
+export const getAdImageDefaults = () =>
+  api.get('/api/settings/ad-image').then((response) => response.data)
+export const updateAdImageDefaults = (payload) =>
+  api.put('/api/settings/ad-image', payload).then((response) => response.data)
+export const generateAdImage = (payload) => {
+  const formData = new FormData()
+  formData.append('text', payload.text)
+  formData.append('width', String(payload.width))
+  formData.append('height', String(payload.height))
+  formData.append('output_format', payload.outputFormat)
+  if (payload.background) formData.append('background', payload.background)
+  return api.post('/api/ad-image/generate', formData, { responseType: 'blob' })
+}

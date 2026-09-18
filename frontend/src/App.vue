@@ -29,6 +29,7 @@
         <el-menu-item index="account">账号安全</el-menu-item>
         <el-menu-item index="additional">内容设置</el-menu-item>
         <el-menu-item index="manual_post">手动发帖</el-menu-item>
+        <el-menu-item index="ad_image">广告图生成</el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -137,6 +138,40 @@
               <template #default="{ row }"><el-button type="primary" link @click="openRule(row)">编辑</el-button></template>
             </el-table-column>
           </el-table>
+        </el-card>
+
+        <el-card v-else-if="activePage === 'ad_image'">
+          <template #header>智能广告图生成</template>
+          <el-form label-width="120px">
+            <el-form-item label="广告文字"><el-input v-model="adImageForm.text" type="textarea" :rows="6" placeholder="输入广告文字" /></el-form-item>
+            <el-form-item label="宽度"><el-input-number v-model="adImageForm.width" :min="256" :max="4096" /></el-form-item>
+            <el-form-item label="高度"><el-input-number v-model="adImageForm.height" :min="256" :max="4096" /></el-form-item>
+            <el-form-item label="图片类型">
+              <el-radio-group v-model="adImageForm.outputFormat">
+                <el-radio-button value="static">静态图</el-radio-button>
+                <el-radio-button value="dynamic">动态图</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="背景图">
+              <el-upload :show-file-list="false" :http-request="selectAdBackground" accept=".png,.jpg,.jpeg,.webp">
+                <el-button>选择背景图</el-button>
+              </el-upload>
+              <el-button v-if="adImageForm.background" link type="danger" @click="adImageForm.background = null">移除背景</el-button>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="generatingAdImage" @click="generateAdImageAction">
+                {{ adImagePreview ? '重新生成' : '一键生成' }}
+              </el-button>
+              <el-button @click="saveAdImageDefaults">保存默认尺寸</el-button>
+            </el-form-item>
+          </el-form>
+          <div v-if="adImagePreview" class="ad-preview">
+            <img :src="adImagePreview" alt="生成的广告图" />
+            <div class="command-row">
+              <el-button type="success" @click="downloadAdImage">下载</el-button>
+              <el-button @click="copyAdImage">复制图片</el-button>
+            </div>
+          </div>
         </el-card>
 
         <el-card v-else-if="activePage === 'manual_post'">
@@ -404,6 +439,8 @@ import {
   enqueueAddTarget,
   enqueueSync,
   createUser,
+  generateAdImage,
+  getAdImageDefaults,
   getAdditionalSettings,
   sendManualPost,
   getAuditLogs,
@@ -423,6 +460,7 @@ import {
   setTargetEnabled,
   updateUser,
   updateAdditionalSettings,
+  updateAdImageDefaults,
   uploadAdditionalImage,
   updateRule,
 } from './api'
@@ -457,6 +495,9 @@ const userForm = ref({ username: '', password: '', role: 'viewer' })
 const passwordForm = ref({ current: '', next: '', confirm: '' })
 const additionalForm = ref({ enabled: false, text: '', image_paths: [], imagePathsText: '', image_caption: '' })
 const manualForm = ref({ targetIds: [], text: '', imagePath: '' })
+const adImageForm = ref({ text: '', width: 1080, height: 1080, outputFormat: 'static', background: null })
+const adImagePreview = ref('')
+const generatingAdImage = ref(false)
 const uploadingManualImage = ref(false)
 const uploadingImage = ref(false)
 const commandForm = ref({ sourceName: '', source: '', targetName: '', target: '', join: false, syncSource: 'all', syncLimit: 100 })
@@ -506,6 +547,7 @@ async function refreshAll() {
     loginHistory.value = authenticated.value ? await getLoginHistory() : []
     webUsers.value = authenticated.value && userRole.value === 'super_admin' ? await getUsers() : []
     await loadAdditionalSettings()
+    await loadAdImageDefaults()
     await loadJobs()
     lastRefresh.value = new Date().toLocaleString()
     await nextTick()
@@ -710,6 +752,64 @@ async function submitManualPost() {
   ElMessage.success('帖子已加入发送队列')
   manualForm.value = { targetIds: [], text: '', imagePath: '' }
   setTimeout(refreshAll, 1500)
+}
+
+async function loadAdImageDefaults() {
+  if (!authenticated.value) return
+  const data = await getAdImageDefaults()
+  adImageForm.value.width = data.default_width
+  adImageForm.value.height = data.default_height
+}
+
+async function saveAdImageDefaults() {
+  await updateAdImageDefaults({
+    default_width: adImageForm.value.width,
+    default_height: adImageForm.value.height,
+  })
+  ElMessage.success('默认尺寸已保存')
+}
+
+function selectAdBackground(options) {
+  adImageForm.value.background = options.file
+}
+
+async function generateAdImageAction() {
+  if (!adImageForm.value.text.trim()) return ElMessage.warning('请输入广告文字')
+  generatingAdImage.value = true
+  try {
+    const response = await generateAdImage({
+      text: adImageForm.value.text,
+      width: adImageForm.value.width,
+      height: adImageForm.value.height,
+      outputFormat: adImageForm.value.outputFormat,
+      background: adImageForm.value.background,
+    })
+    if (adImagePreview.value) URL.revokeObjectURL(adImagePreview.value)
+    adImagePreview.value = URL.createObjectURL(response.data)
+  } catch (error) {
+    ElMessage.error('广告图生成失败')
+  } finally {
+    generatingAdImage.value = false
+  }
+}
+
+async function downloadAdImage() {
+  const link = document.createElement('a')
+  link.href = adImagePreview.value
+  link.download = adImageForm.value.outputFormat === 'dynamic' ? 'ad.gif' : 'ad.png'
+  link.click()
+}
+
+async function copyAdImage() {
+  try {
+    const response = await fetch(adImagePreview.value)
+    const blob = await response.blob()
+    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
+    ElMessage.success('图片已复制')
+  } catch {
+    await navigator.clipboard.writeText(adImagePreview.value)
+    ElMessage.success('图片地址已复制')
+  }
 }
 
 async function loadAdditionalSettings() {
