@@ -4,7 +4,6 @@ import json
 from types import SimpleNamespace
 
 from app.config import AppConfig
-from app.services import runtime_service
 from app.services.control_command_service import COMMAND_SYNC
 from app.services.runtime_service import RuntimeService
 
@@ -19,7 +18,7 @@ def test_runtime_service_initializes_album_filter() -> None:
     assert service._album_filter is not None
 
 
-async def test_runtime_sync_command_passes_fuzzy_keywords(monkeypatch) -> None:
+async def test_runtime_sync_command_passes_fuzzy_keywords() -> None:
     captured: dict[str, object] = {}
 
     class FakeHistory:
@@ -37,7 +36,7 @@ async def test_runtime_sync_command_passes_fuzzy_keywords(monkeypatch) -> None:
 
     class FakeTransfer:
         async def process_pending(self) -> None:
-            captured["processed_pending"] = True
+            raise AssertionError("sync command must leave delivery to the runtime worker")
 
     service = RuntimeService(
         SimpleNamespace(),  # type: ignore[arg-type]
@@ -46,7 +45,6 @@ async def test_runtime_sync_command_passes_fuzzy_keywords(monkeypatch) -> None:
         AppConfig(),
     )
     service.history = FakeHistory()  # type: ignore[assignment]
-    monkeypatch.setattr(runtime_service, "is_runtime_paused", lambda _: False)
     command = SimpleNamespace(
         command_type=COMMAND_SYNC,
         payload=json.dumps({"source_id": 5, "limit": 30, "keywords": ["AI", " 主播 "]}),
@@ -59,5 +57,4 @@ async def test_runtime_sync_command_passes_fuzzy_keywords(monkeypatch) -> None:
         "source_id": 5,
         "limit": 30,
         "fuzzy_keywords": ["AI", "主播"],
-        "processed_pending": True,
     }

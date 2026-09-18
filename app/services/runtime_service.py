@@ -391,8 +391,6 @@ class RuntimeService:
                 limit=limit,
                 fuzzy_keywords=fuzzy_keywords or None,
             )
-            if not is_runtime_paused(self.control_path):
-                await self.transfer.process_pending()
             return {"source_id": int(source_value), "inspected": inspected}
         raise ValueError(f"不支持的控制命令：{command.command_type}")
 
