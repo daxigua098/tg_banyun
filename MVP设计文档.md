@@ -39,6 +39,7 @@
 - 三层去重中的数据库唯一约束和消息水位线
 - 失败记录、基础重试和状态查询
 - CLI 管理源、目标、路由和运行状态
+- Telegram 管理 Bot，供管理员查看状态和执行常用操作
 - SQLite 本地运行，代码保持 PostgreSQL 兼容
 
 ### 2.2 本阶段不做
@@ -47,7 +48,7 @@
 - 水印、片头、片尾、BGM
 - 图片处理
 - 下载后重新上传
-- Web 用户端
+- Web 用户端和管理后台
 - 订阅、订单和支付
 - 多用户和 RBAC
 - 索引机器人监听
@@ -153,6 +154,31 @@ python main.py run
 python main.py stats
 ```
 
+### 6.2 Telegram 管理 Bot
+
+管理 Bot 使用 BotFather 创建的 Bot Token，并复用同一个 Userbot 会话解析频道和群组。管理命令包括：
+
+```text
+/status
+/sources
+/targets
+/routes
+/stats
+/jobs [status] [数量]
+/sync <源ID|all> [数量]
+/retry_failed [任务ID]
+/source_add [--join] <频道/群组> [...]
+/target_add <频道/群组> [...]
+/source_enable <源ID> [...]
+/source_disable <源ID> [...]
+/target_enable <目标ID> [...]
+/target_disable <目标ID> [...]
+/route_add <源ID> <目标ID> [...]
+/route_delete <源ID> <目标ID>
+```
+
+只有 `.env` 中 `TG_ADMIN_IDS` 配置的管理员可以执行命令。管理 Bot 与实时搬运共享 Telegram I/O 锁和串行任务锁。
+
 ---
 
 ## 7. MVP 验收标准
@@ -166,7 +192,8 @@ python main.py stats
 7. 单个目标失败时，其他目标仍能继续。
 8. 程序重启后，未完成任务不会因为内存丢失而全部消失。
 9. 能通过 CLI 查看源、目标、路由和投递统计。
-10. 不依赖 FFmpeg，不下载原始媒体。
+10. 管理 Bot 只允许配置的管理员操作，并能查看状态、管理路由、同步历史和重试失败任务。
+11. 不依赖 FFmpeg，不下载原始媒体。
 
 ---
 
@@ -180,4 +207,3 @@ MVP 稳定后，再依次增加：
 4. 多用户和配额
 5. 管理后台和用户 Web
 6. 订阅与支付
-

@@ -14,6 +14,12 @@ telegram:
   session_name: data/sessions/default
   proxy: null
 
+management_bot:
+  enabled: false
+  token: ""
+  admin_user_ids: []
+  session_name: data/sessions/management_bot
+
 transfer:
   mode: copy
   sequential: true

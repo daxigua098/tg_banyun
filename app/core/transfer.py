@@ -25,10 +25,13 @@ class SequentialTransferService:
         client: TelegramClient,
         session_factory: async_sessionmaker[AsyncSession],
         config: AppConfig,
+        operation_lock: asyncio.Lock | None = None,
     ) -> None:
         self.client = client
         self.session_factory = session_factory
         self.config = config
+        self.operation_lock = operation_lock
+        self._worker_lock = asyncio.Lock()
 
     async def recover_interrupted_jobs(self) -> int:
         """Reset jobs interrupted by a previous process shutdown."""
@@ -93,6 +96,10 @@ class SequentialTransferService:
 
     async def process_pending(self, *, wait_for_retry: bool = False) -> int:
         """Process eligible jobs sequentially, one at a time."""
+        async with self._worker_lock:
+            return await self._process_pending_locked(wait_for_retry=wait_for_retry)
+
+    async def _process_pending_locked(self, *, wait_for_retry: bool) -> int:
         processed = 0
         while True:
             job_id = await self._next_ready_job_id()
@@ -208,13 +215,24 @@ class SequentialTransferService:
     async def _forward_message(self, source: Source, target: Target, message_id: int) -> Any:
         source_entity = source.tg_id or source.raw_input
         target_entity = target.tg_id or target.raw_input
-        result = await self.client.forward_messages(
+        if self.operation_lock is None:
+            return await self._call_forward(source_entity, target_entity, message_id)
+
+        async with self.operation_lock:
+            return await self._call_forward(source_entity, target_entity, message_id)
+
+    async def _call_forward(
+        self,
+        source_entity: int | str,
+        target_entity: int | str,
+        message_id: int,
+    ) -> Any:
+        return await self.client.forward_messages(
             entity=target_entity,
             messages=message_id,
             from_peer=source_entity,
             drop_author=self.config.transfer.mode == "copy",
         )
-        return result
 
     @staticmethod
     def _result_message_id(result: Any) -> int | None:
@@ -230,6 +248,3 @@ class SequentialTransferService:
                 select(DeliveryJob.status, func.count(DeliveryJob.id)).group_by(DeliveryJob.status)
             )
             return {str(status): int(count) for status, count in rows.all()}
-
-
-

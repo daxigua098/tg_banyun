@@ -165,3 +165,48 @@ async def list_routes(session: AsyncSession) -> list[Route]:
     """List route bindings."""
     result = await session.scalars(select(Route).order_by(Route.source_id.asc(), Route.id.asc()))
     return list(result)
+
+async def set_source_enabled(
+    session: AsyncSession,
+    source_id: int,
+    enabled: bool,
+) -> Source:
+    """Enable or disable a source."""
+    source = await session.get(Source, source_id)
+    if source is None:
+        raise ValueError(f"Source {source_id} does not exist.")
+    source.enabled = enabled
+    await session.commit()
+    await session.refresh(source)
+    return source
+
+
+async def set_target_enabled(
+    session: AsyncSession,
+    target_id: int,
+    enabled: bool,
+) -> Target:
+    """Enable or disable a target."""
+    target = await session.get(Target, target_id)
+    if target is None:
+        raise ValueError(f"Target {target_id} does not exist.")
+    target.enabled = enabled
+    await session.commit()
+    await session.refresh(target)
+    return target
+
+
+async def delete_route(
+    session: AsyncSession,
+    source_id: int,
+    target_id: int,
+) -> bool:
+    """Delete one route and report whether a row was removed."""
+    route = await session.scalar(
+        select(Route).where(Route.source_id == source_id, Route.target_id == target_id)
+    )
+    if route is None:
+        return False
+    await session.delete(route)
+    await session.commit()
+    return True

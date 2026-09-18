@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from loguru import logger
@@ -23,11 +26,21 @@ class HistorySyncService:
         session_factory: async_sessionmaker[AsyncSession],
         transfer: SequentialTransferService,
         config: AppConfig,
+        operation_lock: asyncio.Lock | None = None,
     ) -> None:
         self.client = client
         self.session_factory = session_factory
         self.transfer = transfer
         self.config = config
+        self.operation_lock = operation_lock
+
+    @asynccontextmanager
+    async def _operation_context(self) -> AsyncIterator[None]:
+        if self.operation_lock is None:
+            yield
+            return
+        async with self.operation_lock:
+            yield
 
     async def sync_all(self, *, limit: int | None = None) -> dict[int, int]:
         """Synchronize all enabled sources in deterministic order."""
@@ -63,29 +76,30 @@ class HistorySyncService:
 
         inspected = 0
         try:
-            async for message in self.client.iter_messages(
-                entity,
-                min_id=watermark,
-                reverse=True,
-                limit=limit,
-            ):
-                if self.config.history.skip_pinned and getattr(message, "pinned", False):
-                    continue
-
-                await self.transfer.enqueue_message(source_id, int(message.id))
-                inspected += 1
-
-                async with self.session_factory() as session:
-                    current = await session.get(Source, source_id)
-                    if current is None:
+            async with self._operation_context():
+                async for message in self.client.iter_messages(
+                    entity,
+                    min_id=watermark,
+                    reverse=True,
+                    limit=limit,
+                ):
+                    if self.config.history.skip_pinned and getattr(message, "pinned", False):
                         continue
-                    current.last_synced_message_id = max(
-                        current.last_synced_message_id,
-                        int(message.id),
-                    )
-                    current.last_sync_at = datetime.now(UTC)
-                    current.sync_status = "ready"
-                    await session.commit()
+
+                    await self.transfer.enqueue_message(source_id, int(message.id))
+                    inspected += 1
+
+                    async with self.session_factory() as session:
+                        current = await session.get(Source, source_id)
+                        if current is None:
+                            continue
+                        current.last_synced_message_id = max(
+                            current.last_synced_message_id,
+                            int(message.id),
+                        )
+                        current.last_sync_at = datetime.now(UTC)
+                        current.sync_status = "ready"
+                        await session.commit()
         except Exception as exc:  # noqa: BLE001 - keep source loop alive
             async with self.session_factory() as session:
                 current = await session.get(Source, source_id)
@@ -102,6 +116,3 @@ class HistorySyncService:
             inspected,
         )
         return inspected
-
-
-

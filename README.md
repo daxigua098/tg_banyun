@@ -13,6 +13,7 @@
 - 数据库幂等去重
 - 失败任务持久化和基础重试
 - CLI 状态查询
+- Telegram 管理 Bot
 
 详细范围见 `MVP设计文档.md`。
 
@@ -93,6 +94,80 @@ python main.py run
 python main.py stats
 ```
 
+## Telegram 管理 Bot
+
+管理 Bot 是可选功能。它复用同一个 Userbot 登录会话和数据库，因此配置后只需要运行主程序。
+
+### 1. 创建 Bot
+
+在 Telegram 中找到 `@BotFather`，使用 `/newbot` 创建一个 Bot，并保存 Bot Token。
+
+### 2. 配置 `.env`
+
+```dotenv
+TG_BOT_TOKEN=123456:replace-with-botfather-token
+TG_ADMIN_IDS=你的Telegram用户ID
+TG_BOT_SESSION_NAME=data/sessions/management_bot
+```
+
+多个管理员用英文逗号分隔：
+
+```dotenv
+TG_ADMIN_IDS=123456789,987654321
+```
+
+`TG_ADMIN_IDS` 是 Telegram 用户 ID，不是用户名。执行 `python main.py login` 时会显示当前账号的用户 ID。
+
+### 3. 启用管理 Bot
+
+编辑 `configs/config.yaml`：
+
+```yaml
+management_bot:
+  enabled: true
+```
+
+然后启动主程序：
+
+```powershell
+python main.py run
+```
+
+程序会同时启动：
+
+- Userbot 监控和搬运
+- 管理 Bot 命令处理
+
+如果只想调试管理 Bot，可以运行：
+
+```powershell
+python main.py bot
+```
+
+管理 Bot 支持以下命令：
+
+```text
+/status
+/sources
+/targets
+/routes
+/stats
+/jobs [status] [数量]
+/sync <源ID|all> [数量]
+/retry_failed [任务ID]
+/source_add [--join] <频道/群组> [...]
+/target_add <频道/群组> [...]
+/source_enable <源ID> [...]
+/source_disable <源ID> [...]
+/target_enable <目标ID> [...]
+/target_disable <目标ID> [...]
+/route_add <源ID> <目标ID> [...]
+/route_delete <源ID> <目标ID>
+/help
+```
+
+只有 `TG_ADMIN_IDS` 中的用户可以执行管理命令。
+
 ## 顺序保证
 
 - 历史采集按源优先级和源 ID 顺序执行。
@@ -100,7 +175,8 @@ python main.py stats
 - 同一消息的目标按目标 ID 顺序处理。
 - 所有目标和所有源共享一个投递队列。
 - MVP 强制 `transfer.worker_concurrency = 1`，配置为其他值会直接校验失败。
-- `run` 和 `sync-history` 使用 `data/runtime.lock` 跨进程锁，防止启动多个搬运实例。
+- `run`、`bot` 和 `sync-history` 使用 `data/runtime.lock` 跨进程锁，防止启动多个搬运实例。
+- 管理 Bot 和主搬运流程共享 Telegram I/O 锁，以及同一条串行投递队列。
 
 ## 当前已知限制
 
@@ -109,5 +185,5 @@ python main.py stats
 - 源消息被成功加入持久化投递队列后，水位线才会推进。
 - 失败任务会在重启后继续尝试。
 - 投递语义是至少一次；进程在发送成功但提交数据库前崩溃时，重启后可能重复发送。
+- 管理 Bot 当前是文本命令界面，没有 Inline Keyboard 和审核流程。
 - 不能绕过 Telegram 或目标频道的权限限制。
-

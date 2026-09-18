@@ -25,12 +25,19 @@ class RuntimeService:
         session_factory: async_sessionmaker[AsyncSession],
         transfer: SequentialTransferService,
         config: AppConfig,
+        operation_lock: asyncio.Lock | None = None,
     ) -> None:
         self.client = client
         self.session_factory = session_factory
         self.transfer = transfer
         self.config = config
-        self.history = HistorySyncService(client, session_factory, transfer, config)
+        self.history = HistorySyncService(
+            client,
+            session_factory,
+            transfer,
+            config,
+            operation_lock=operation_lock,
+        )
         self.queue: asyncio.Queue[tuple[int, int] | None] = asyncio.Queue()
         self._new_message_filter = events.NewMessage(incoming=True)
 

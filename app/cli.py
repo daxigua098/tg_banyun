@@ -14,12 +14,19 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import PROJECT_ROOT, AppConfig, load_config
-from app.core.client import create_telegram_client, start_client
+from app.core.client import (
+    create_management_bot_client,
+    create_telegram_client,
+    start_client,
+    start_management_bot_client,
+)
 from app.core.runtime_lock import RuntimeLock
 from app.core.transfer import SequentialTransferService
 from app.database import dispose_database, get_session_factory, init_database
 from app.models import DeliveryJob, Route, Source, Target
 from app.services.history_service import HistorySyncService
+from app.services.management_bot_service import ManagementBotService
+from app.services.management_command_service import ManagementCommandService
 from app.services.runtime_service import RuntimeService
 from app.services.source_service import (
     add_route,
@@ -84,6 +91,31 @@ async def _with_client(
             await client.disconnect()
 
 
+async def _start_management_bot(
+    config: AppConfig,
+    user_client: Any,
+    session_factory: async_sessionmaker[AsyncSession],
+    transfer: SequentialTransferService,
+    operation_lock: asyncio.Lock,
+) -> tuple[Any, ManagementBotService]:
+    bot_client = create_management_bot_client(config)
+    try:
+        await start_management_bot_client(bot_client, config)
+    except Exception:
+        if bot_client.is_connected():
+            await bot_client.disconnect()
+        raise
+
+    command_service = ManagementCommandService(
+        user_client,
+        session_factory,
+        transfer,
+        config,
+        operation_lock=operation_lock,
+    )
+    return bot_client, ManagementBotService(bot_client, command_service, config)
+
+
 async def command_init_db(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     _configure_logging(config)
@@ -93,10 +125,13 @@ async def command_init_db(args: argparse.Namespace) -> None:
 
 def command_check_config(args: argparse.Namespace) -> None:
     config = load_config(args.config)
+    if config.management_bot.enabled:
+        config.management_bot.validate_ready()
     print(f"Config OK: {config.app.name} ({config.app.environment})")
     print(f"Transfer mode: {config.transfer.mode}")
     print(f"Sequential worker: {config.transfer.sequential}")
     print(f"Worker concurrency: {config.transfer.worker_concurrency}")
+    print(f"Management bot enabled: {config.management_bot.enabled}")
 
 
 async def command_login(args: argparse.Namespace) -> None:
@@ -104,7 +139,7 @@ async def command_login(args: argparse.Namespace) -> None:
 
     async def run(client: Any) -> None:
         me = await client.get_me()
-        print(f"Logged in as: {getattr(me, 'username', None) or me.id}")
+        print(f"Logged in as: {getattr(me, 'username', None) or me.id} (id={me.id})")
 
     await _with_client(config, run)
 
@@ -185,8 +220,20 @@ async def command_sync_history(args: argparse.Namespace) -> None:
     config, session_factory = await _prepare(args.config)
 
     async def run(client: Any) -> None:
-        transfer = SequentialTransferService(client, session_factory, config)
-        history = HistorySyncService(client, session_factory, transfer, config)
+        operation_lock = asyncio.Lock()
+        transfer = SequentialTransferService(
+            client,
+            session_factory,
+            config,
+            operation_lock=operation_lock,
+        )
+        history = HistorySyncService(
+            client,
+            session_factory,
+            transfer,
+            config,
+            operation_lock=operation_lock,
+        )
         if args.all:
             results = await history.sync_all(limit=args.limit)
             for source_id, inspected in results.items():
@@ -205,9 +252,73 @@ async def command_run(args: argparse.Namespace) -> None:
     config, session_factory = await _prepare(args.config)
 
     async def run(client: Any) -> None:
-        transfer = SequentialTransferService(client, session_factory, config)
-        runtime = RuntimeService(client, session_factory, transfer, config)
-        await runtime.run()
+        operation_lock = asyncio.Lock()
+        transfer = SequentialTransferService(
+            client,
+            session_factory,
+            config,
+            operation_lock=operation_lock,
+        )
+        runtime = RuntimeService(
+            client,
+            session_factory,
+            transfer,
+            config,
+            operation_lock=operation_lock,
+        )
+
+        tasks = [asyncio.create_task(runtime.run(), name="userbot-runtime")]
+        bot_client: Any | None = None
+        if config.management_bot.enabled:
+            bot_client, bot_service = await _start_management_bot(
+                config,
+                client,
+                session_factory,
+                transfer,
+                operation_lock,
+            )
+            tasks.append(
+                asyncio.create_task(bot_service.run(), name="management-bot-runtime")
+            )
+
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            if bot_client is not None and bot_client.is_connected():
+                await bot_client.disconnect()
+
+    with RuntimeLock(config.project_root / "data" / "runtime.lock"):
+        await _with_client(config, run)
+
+
+async def command_bot(args: argparse.Namespace) -> None:
+    config, session_factory = await _prepare(args.config)
+    if not config.management_bot.enabled:
+        raise ValueError("Management bot is disabled. Set management_bot.enabled=true.")
+
+    async def run(client: Any) -> None:
+        operation_lock = asyncio.Lock()
+        transfer = SequentialTransferService(
+            client,
+            session_factory,
+            config,
+            operation_lock=operation_lock,
+        )
+        bot_client, bot_service = await _start_management_bot(
+            config,
+            client,
+            session_factory,
+            transfer,
+            operation_lock,
+        )
+        try:
+            await bot_service.run()
+        finally:
+            if bot_client.is_connected():
+                await bot_client.disconnect()
 
     with RuntimeLock(config.project_root / "data" / "runtime.lock"):
         await _with_client(config, run)
@@ -267,7 +378,8 @@ def build_parser() -> argparse.ArgumentParser:
     sync_history_group.add_argument("--source", type=int)
     sync_history.add_argument("--limit", type=int, default=None)
 
-    subparsers.add_parser("run", help="Run history catch-up and realtime listener")
+    subparsers.add_parser("run", help="Run userbot and management bot if enabled")
+    subparsers.add_parser("bot", help="Run only the management bot")
     subparsers.add_parser("stats", help="Show delivery statistics")
     return parser
 
@@ -298,6 +410,8 @@ async def _dispatch(args: argparse.Namespace) -> None:
         await command_sync_history(args)
     elif args.command == "run":
         await command_run(args)
+    elif args.command == "bot":
+        await command_bot(args)
     elif args.command == "stats":
         await command_stats(args)
 
@@ -322,9 +436,3 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - CLI should show a concise error
         print(f"Error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
-
-
-
-
-
-

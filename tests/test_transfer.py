@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 from sqlalchemy import select
@@ -90,4 +91,36 @@ async def test_one_source_delivers_to_targets_in_order() -> None:
         jobs = list(await session.scalars(select(DeliveryJob).order_by(DeliveryJob.id)))
         assert [job.status for job in jobs] == ["success", "success"]
 
+    await engine.dispose()
+
+async def test_concurrent_process_pending_calls_do_not_duplicate_delivery() -> None:
+    session_factory, engine = await _build_factory()
+    fake_client = FakeTelegramClient()
+    config = AppConfig(transfer=TransferConfig(delay_seconds=0))
+
+    async with session_factory() as session:
+        source = Source(
+            raw_input="@source",
+            normalized_key="username:source",
+            tg_id=100,
+            title="Source",
+        )
+        target = Target(
+            raw_input="@target",
+            normalized_key="username:target",
+            tg_id=201,
+            title="Target",
+        )
+        session.add_all([source, target])
+        await session.commit()
+        session.add(Route(source_id=source.id, target_id=target.id))
+        await session.commit()
+        source_id = source.id
+
+    service = SequentialTransferService(fake_client, session_factory, config)
+    await service.enqueue_message(source_id, 88)
+
+    await asyncio.gather(service.process_pending(), service.process_pending())
+
+    assert fake_client.calls == [(201, 88)]
     await engine.dispose()
