@@ -361,7 +361,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     target = subparsers.add_parser("target", help="Manage targets")
     target_sub = target.add_subparsers(dest="target_command", required=True)
-    target_add = target_sub.add_parser("add", help="Add one or more targets")
+    target_add = target_sub.add_parser(
+        "add",
+        help="Add targets; private invite links must already be joined",
+    )
     target_add.add_argument("inputs", nargs="+")
     target_sub.add_parser("list", help="List targets")
 

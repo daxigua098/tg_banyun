@@ -10,6 +10,13 @@ from app.core.source_resolver import resolve_chat_input
     [
         ("@Example_Channel", "username", "Example_Channel", "username:example_channel"),
         ("https://t.me/Example_Channel", "username", "Example_Channel", "username:example_channel"),
+        (
+            "https://t.me/Example_Channel/123",
+            "username",
+            "Example_Channel",
+            "username:example_channel",
+        ),
+        ("t.me/porna91com/1", "username", "porna91com", "username:porna91com"),
         ("-1001234567890", "chat_id", "-1001234567890", "chat_id:-1001234567890"),
         ("123456789", "chat_id", "123456789", "chat_id:123456789"),
         (

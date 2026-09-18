@@ -11,6 +11,9 @@ ResolutionKind = Literal["username", "invite", "chat_id"]
 _USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")
 _INVITE_RE = re.compile(r"^[A-Za-z0-9_-]{16,}$")
 _PRIVATE_LINK_RE = re.compile(r"^c/(?P<internal_id>\d+)(?:/\d+)?$", re.IGNORECASE)
+_PUBLIC_MESSAGE_LINK_RE = re.compile(
+    r"^(?P<username>[A-Za-z][A-Za-z0-9_]{4,31})/\d+(?:\?.*)?$"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +84,18 @@ def resolve_chat_input(raw_input: str) -> ResolvedChat:
             is_private=True,
         )
 
+    public_message_match = _PUBLIC_MESSAGE_LINK_RE.fullmatch(value)
+    if public_message_match:
+        username = public_message_match.group("username")
+        normalized = username.lower()
+        return ResolvedChat(
+            raw=raw_input,
+            kind="username",
+            value=username,
+            normalized_key=f"username:{normalized}",
+            is_private=False,
+        )
+
     username = value.removeprefix("@").strip("/")
     if _USERNAME_RE.fullmatch(username):
         normalized = username.lower()
@@ -94,5 +109,5 @@ def resolve_chat_input(raw_input: str) -> ResolvedChat:
 
     raise ValueError(
         "Unsupported Telegram chat input. Use @username, t.me/username, "
-        "t.me/+invite, t.me/c/..., or a numeric chat ID."
+        "t.me/username/message_id, t.me/+invite, t.me/c/..., or a numeric chat ID."
     )

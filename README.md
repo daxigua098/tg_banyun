@@ -65,6 +65,14 @@ python main.py target list
 python main.py source add "https://t.me/+invite_hash" --join
 ```
 
+如果 Userbot 已经加入私有目标频道，也可以直接添加为目标：
+
+```powershell
+python main.py target add "https://t.me/+private_target_invite"
+```
+
+目标添加不会自动加入私有频道；Userbot 必须先加入，并且具备发消息权限。
+
 ## 建立一对多路由
 
 ```powershell

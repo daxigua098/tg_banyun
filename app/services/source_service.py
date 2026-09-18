@@ -86,6 +86,21 @@ async def add_source(
     return source
 
 
+async def _resolve_joined_invite(
+    client: TelegramClient,
+    resolved: ResolvedChat,
+) -> Any:
+    """Resolve an invite link only when the userbot has already joined it."""
+    invite_link = f"https://t.me/+{resolved.value}"
+    try:
+        return await client.get_entity(invite_link)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            "The userbot could not resolve this private invite. "
+            "Join the target with the userbot first, then add it as a target."
+        ) from exc
+
+
 async def add_target(
     session: AsyncSession,
     client: TelegramClient,
@@ -93,8 +108,6 @@ async def add_target(
 ) -> Target:
     """Resolve and persist one Telegram target."""
     resolved = resolve_chat_input(raw_input)
-    if resolved.kind == "invite":
-        raise ValueError("Targets cannot be added through private invite links in this MVP.")
 
     existing = await session.scalar(
         select(Target).where(Target.normalized_key == resolved.normalized_key)
@@ -102,7 +115,10 @@ async def add_target(
     if existing is not None:
         return existing
 
-    entity = await client.get_entity(resolved.value)
+    if resolved.kind == "invite":
+        entity = await _resolve_joined_invite(client, resolved)
+    else:
+        entity = await client.get_entity(resolved.value)
     tg_id, title, username, _ = _entity_info(entity)
     existing = await session.scalar(select(Target).where(Target.tg_id == tg_id))
     if existing is not None:
