@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 from datetime import UTC, datetime
@@ -22,10 +23,30 @@ def read_runtime_status(path: Path) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _windows_process_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(0x1000, False, pid)
+    except (AttributeError, OSError):
+        return False
+    if handle:
+        kernel32.CloseHandle(handle)
+        return True
+    # ERROR_ACCESS_DENIED means the process exists but belongs to another user.
+    return ctypes.get_last_error() == 5
+
+
 def is_process_running(pid: int) -> bool:
     """Return whether a local PID appears to still exist."""
+    if os.name == "nt":
+        return _windows_process_running(pid)
+
     try:
         os.kill(pid, 0)
+    except PermissionError:
+        return True
     except OSError:
         return False
     return True

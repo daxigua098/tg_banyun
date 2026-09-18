@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from app.core.heartbeat import HeartbeatWriter, is_process_running, read_runtime_status
 
 
@@ -32,3 +34,14 @@ def test_heartbeat_stopped_status(tmp_path) -> None:
 def test_process_running_check() -> None:
     assert is_process_running(os.getpid()) is True
     assert is_process_running(2_147_483_647) is False
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows uses the native process API")
+def test_process_running_treats_permission_error_as_alive(monkeypatch) -> None:
+    def deny(pid: int, sig: int) -> None:
+        raise PermissionError
+
+    monkeypatch.setattr(os, "kill", deny)
+    assert is_process_running(12345) is True
+
+
