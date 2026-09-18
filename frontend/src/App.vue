@@ -215,13 +215,27 @@
               </el-select>
             </el-form-item>
             <el-form-item label="帖子内容">
-              <el-input v-model="manualForm.text" type="textarea" :rows="8" placeholder="输入要发送的文字内容" />
+              <div class="rich-editor-wrap">
+                <div class="rich-toolbar">
+                  <el-button size="small" @click="editorCommand('bold')"><b>B</b></el-button>
+                  <el-button size="small" @click="editorCommand('italic')"><i>I</i></el-button>
+                  <el-button size="small" @click="editorCommand('underline')"><u>U</u></el-button>
+                  <el-button size="small" @click="insertEditorLink">添加链接</el-button>
+                </div>
+                <div
+                  ref="manualEditor"
+                  class="rich-editor"
+                  contenteditable="true"
+                  data-placeholder="输入帖子内容，可直接粘贴图片"
+                  @paste="handleManualPaste"
+                ></div>
+              </div>
             </el-form-item>
             <el-form-item label="配图">
               <el-upload :show-file-list="false" :http-request="uploadManualImage" accept=".png,.jpg,.jpeg,.webp,.gif">
                 <el-button :loading="uploadingManualImage">上传配图</el-button>
               </el-upload>
-              <span v-if="manualForm.imagePath" class="upload-hint">{{ manualForm.imagePath }}</span>
+              <span class="upload-hint">也可以在编辑框中直接 Ctrl+V 粘贴图片</span>
             </el-form-item>
             <el-form-item><el-button type="primary" @click="submitManualPost">加入发送队列</el-button></el-form-item>
           </el-form>
@@ -528,7 +542,8 @@ const addTargetForm = ref({ name: '', input: '' })
 const userForm = ref({ username: '', password: '', role: 'viewer' })
 const passwordForm = ref({ current: '', next: '', confirm: '' })
 const additionalForm = ref({ enabled: false, text: '', image_paths: [], imagePathsText: '', image_caption: '' })
-const manualForm = ref({ targetIds: [], text: '', imagePath: '' })
+const manualForm = ref({ targetIds: [], imagePaths: [] })
+const manualEditor = ref(null)
 const adImageForm = ref({ text: '', width: 1080, height: 1080, outputFormat: 'static', background: null })
 const adImagePreview = ref('')
 const uploadAssets = ref([])
@@ -765,11 +780,33 @@ async function logoutAllAction() {
   logout(false)
 }
 
+function editorCommand(command, value = null) {
+  manualEditor.value?.focus()
+  document.execCommand(command, false, value)
+}
+
+function insertEditorLink() {
+  const url = window.prompt('请输入链接地址', 'https://')
+  if (url) editorCommand('createLink', url)
+}
+
+function insertEditorImage(path) {
+  const editor = manualEditor.value
+  if (!editor) return
+  editor.focus()
+  const image = document.createElement('img')
+  image.src = path
+  image.dataset.uploadPath = path
+  image.className = 'editor-pasted-image'
+  document.execCommand('insertHTML', false, image.outerHTML)
+  manualForm.value.imagePaths.push(path)
+}
+
 async function uploadManualImage(options) {
   uploadingManualImage.value = true
   try {
     const result = await uploadAdditionalImage(options.file)
-    manualForm.value.imagePath = result.path
+    insertEditorImage(result.path)
     ElMessage.success('配图已上传')
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '图片上传失败')
@@ -778,16 +815,58 @@ async function uploadManualImage(options) {
   }
 }
 
+async function handleManualPaste(event) {
+  const items = Array.from(event.clipboardData?.items || [])
+  const imageItem = items.find((item) => item.type.startsWith('image/'))
+  if (!imageItem) return
+  event.preventDefault()
+  const file = imageItem.getAsFile()
+  if (!file) return
+  uploadingManualImage.value = true
+  try {
+    const result = await uploadAdditionalImage(file)
+    insertEditorImage(result.path)
+    ElMessage.success('粘贴图片已上传')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '粘贴图片上传失败')
+  } finally {
+    uploadingManualImage.value = false
+  }
+}
+
+function telegramEditorHtml() {
+  if (!manualEditor.value) return ''
+  const clone = manualEditor.value.cloneNode(true)
+  clone.querySelectorAll('img[data-upload-path]').forEach((image) => image.remove())
+  clone.querySelectorAll('*').forEach((element) => {
+    const tag = element.tagName.toLowerCase()
+    if (tag === 'a') {
+      const href = element.getAttribute('href') || ''
+      Array.from(element.attributes).forEach((attribute) => element.removeAttribute(attribute.name))
+      if (href) element.setAttribute('href', href)
+    } else if (['b', 'strong', 'i', 'em', 'u', 's', 'br'].includes(tag)) {
+      Array.from(element.attributes).forEach((attribute) => element.removeAttribute(attribute.name))
+    } else if (['div', 'p'].includes(tag)) {
+      element.replaceWith(...Array.from(element.childNodes), document.createElement('br'))
+    } else {
+      element.replaceWith(...Array.from(element.childNodes))
+    }
+  })
+  return clone.innerHTML.trim()
+}
+
 async function submitManualPost() {
   if (!manualForm.value.targetIds.length) return ElMessage.warning('请选择目标群组')
-  if (!manualForm.value.text && !manualForm.value.imagePath) return ElMessage.warning('请输入文字或上传配图')
+  const textHtml = telegramEditorHtml()
+  if (!textHtml && !manualForm.value.imagePaths.length) return ElMessage.warning('请输入文字或粘贴图片')
   await sendManualPost({
     target_ids: manualForm.value.targetIds,
-    text: manualForm.value.text,
-    image_path: manualForm.value.imagePath,
+    text_html: textHtml,
+    image_paths: manualForm.value.imagePaths,
   })
   ElMessage.success('帖子已加入发送队列')
-  manualForm.value = { targetIds: [], text: '', imagePath: '' }
+  manualForm.value = { targetIds: [], imagePaths: [] }
+  if (manualEditor.value) manualEditor.value.innerHTML = ''
   setTimeout(refreshAll, 1500)
 }
 
