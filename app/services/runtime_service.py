@@ -6,15 +6,16 @@ import asyncio
 from contextlib import suppress
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from telethon import TelegramClient, events
 
 from app.config import AppConfig
 from app.core.content_filter import should_transfer_message
+from app.core.heartbeat import HeartbeatWriter
 from app.core.message_batch import MessageBatch
 from app.core.transfer import SequentialTransferService
-from app.models import Source
+from app.models import Route, Source, Target
 from app.services.history_service import HistorySyncService
 
 
@@ -41,6 +42,7 @@ class RuntimeService:
             operation_lock=operation_lock,
         )
         self.queue: asyncio.Queue[tuple[int, MessageBatch] | None] = asyncio.Queue()
+        self.heartbeat = HeartbeatWriter(config.project_root / "data" / "runtime_status.json")
         self._new_message_filter = events.NewMessage(
             incoming=True,
             func=self._is_non_album,
@@ -60,6 +62,10 @@ class RuntimeService:
         self.client.add_event_handler(self._on_new_message, self._new_message_filter)
         self.client.add_event_handler(self._on_album, self._album_filter)
         worker: asyncio.Task[None] | None = None
+        heartbeat_task = asyncio.create_task(
+            self._heartbeat_loop(),
+            name="runtime-heartbeat",
+        )
 
         try:
             await self.transfer.process_pending()
@@ -72,6 +78,9 @@ class RuntimeService:
             logger.info("Realtime listener is running; all transfers use one sequential worker")
             await self.client.run_until_disconnected()
         finally:
+            heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
             if worker is not None:
                 await self.queue.put(None)
                 worker.cancel()
@@ -79,6 +88,36 @@ class RuntimeService:
                     await worker
             self.client.remove_event_handler(self._on_new_message, self._new_message_filter)
             self.client.remove_event_handler(self._on_album, self._album_filter)
+            await self._write_heartbeat("stopped")
+
+    async def _heartbeat_loop(self) -> None:
+        while True:
+            await self._write_heartbeat("running")
+            await asyncio.sleep(5)
+
+    async def _write_heartbeat(self, status: str) -> None:
+        try:
+            async with self.session_factory() as session:
+                source_count = int(
+                    await session.scalar(select(func.count()).select_from(Source)) or 0
+                )
+                target_count = int(
+                    await session.scalar(select(func.count()).select_from(Target)) or 0
+                )
+                route_count = int(
+                    await session.scalar(select(func.count()).select_from(Route)) or 0
+                )
+        except Exception:  # noqa: BLE001 - monitoring must not stop the runtime
+            logger.exception("Failed to collect runtime status")
+            source_count = target_count = route_count = 0
+
+        self.heartbeat.write(
+            status=status,
+            source_count=source_count,
+            target_count=target_count,
+            route_count=route_count,
+            queue_size=self.queue.qsize(),
+        )
 
     async def _sync_history_sequentially(self) -> None:
         if not self.config.history.enabled:

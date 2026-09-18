@@ -1,0 +1,20 @@
+[Unit]
+Description=TG-Mirror-Bot Telegram mirror runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Change these values for the deployment server.
+User=tgmirror
+Group=tgmirror
+WorkingDirectory=/opt/tg-mirror-bot
+EnvironmentFile=/opt/tg-mirror-bot/.env
+ExecStart=/opt/tg-mirror-bot/.venv/bin/python main.py run --skip-history
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target

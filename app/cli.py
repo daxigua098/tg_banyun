@@ -20,6 +20,7 @@ from app.core.client import (
     start_client,
     start_management_bot_client,
 )
+from app.core.heartbeat import is_process_running, read_runtime_status
 from app.core.runtime_lock import RuntimeLock
 from app.core.transfer import SequentialTransferService
 from app.database import dispose_database, get_session_factory, init_database
@@ -379,6 +380,39 @@ async def command_bot(args: argparse.Namespace) -> None:
         await _with_client(config, run)
 
 
+async def command_status(args: argparse.Namespace) -> None:
+    config, session_factory = await _prepare(args.config)
+    heartbeat = read_runtime_status(config.project_root / "data" / "runtime_status.json")
+
+    if heartbeat is None:
+        state = "not_started"
+    elif heartbeat.get("status") != "running":
+        state = str(heartbeat.get("status") or "unknown")
+    else:
+        pid = int(heartbeat.get("pid") or 0)
+        state = "running" if is_process_running(pid) else "stale"
+
+    async with session_factory() as session:
+        source_total = int(await session.scalar(select(func.count()).select_from(Source)) or 0)
+        target_total = int(await session.scalar(select(func.count()).select_from(Target)) or 0)
+        route_total = int(await session.scalar(select(func.count()).select_from(Route)) or 0)
+        job_rows = await session.execute(
+            select(DeliveryJob.status, func.count(DeliveryJob.id)).group_by(DeliveryJob.status)
+        )
+        jobs = {str(status): int(count) for status, count in job_rows.all()}
+
+    print(f"Runtime state: {state}")
+    if heartbeat:
+        print(f"PID: {heartbeat.get('pid')}")
+        print(f"Started at: {heartbeat.get('started_at')}")
+        print(f"Heartbeat at: {heartbeat.get('heartbeat_at')}")
+        print(f"Queue size: {heartbeat.get('queue_size', 0)}")
+    print(f"Sources: {source_total}")
+    print(f"Targets: {target_total}")
+    print(f"Routes: {route_total}")
+    print("Jobs: " + (", ".join(f"{key}={value}" for key, value in sorted(jobs.items())) or "0"))
+
+
 async def command_stats(args: argparse.Namespace) -> None:
     _, session_factory = await _prepare(args.config)
     async with session_factory() as session:
@@ -460,6 +494,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not run automatic history catch-up at startup",
     )
     subparsers.add_parser("bot", help="Run only the management bot")
+    subparsers.add_parser("status", help="Show runtime and database status")
     subparsers.add_parser("stats", help="Show delivery statistics")
     return parser
 
@@ -499,6 +534,8 @@ async def _dispatch(args: argparse.Namespace) -> None:
         await command_run(args)
     elif args.command == "bot":
         await command_bot(args)
+    elif args.command == "status":
+        await command_status(args)
     elif args.command == "stats":
         await command_stats(args)
 

@@ -127,11 +127,40 @@ python main.py run
 python main.py run --skip-history
 ```
 
+查看运行状态：
+
+```powershell
+python main.py status
+```
+
 查看投递统计：
 
 ```powershell
 python main.py stats
 ```
+
+## 后台运行
+
+Windows 立即后台启动并跳过历史同步：
+
+```powershell
+.\scripts\start-background.ps1 -SkipHistory
+python main.py status
+```
+
+停止后台进程：
+
+```powershell
+.\scripts\stop-background.ps1
+```
+
+注册开机启动任务需要管理员 PowerShell：
+
+```powershell
+.\scripts\install-windows-task.ps1
+```
+
+Linux 使用 `deploy/systemd/tg-mirror-bot.service` 模板，修改用户、目录和环境文件后安装到 systemd。
 
 ## Telegram 管理 Bot
 

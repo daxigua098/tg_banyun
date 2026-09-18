@@ -11,6 +11,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import AppConfig
+from app.core.heartbeat import is_process_running, read_runtime_status
 from app.core.transfer import SequentialTransferService
 from app.models import DeliveryJob, Route, Source, Target
 from app.services.history_service import HistorySyncService
@@ -143,8 +144,19 @@ class ManagementCommandService:
             route_total = await self._count(session, Route)
             jobs = await self._job_counts(session)
         connected = self.user_client.is_connected()
+        heartbeat = read_runtime_status(
+            self.config.project_root / "data" / "runtime_status.json"
+        )
+        if heartbeat is None:
+            runtime_state = "未启动"
+        elif heartbeat.get("status") != "running":
+            runtime_state = str(heartbeat.get("status"))
+        else:
+            pid = int(heartbeat.get("pid") or 0)
+            runtime_state = "运行中" if is_process_running(pid) else "心跳过期"
         lines = [
             "TG-Mirror-Bot 状态",
+            f"运行状态：{runtime_state}",
             f"Userbot：{'已连接' if connected else '未连接'}",
             f"源：总 {source_total} / 启用 {source_enabled}",
             f"目标：总 {target_total} / 启用 {target_enabled}",

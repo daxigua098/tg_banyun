@@ -16,3 +16,7 @@ def test_record_add_accepts_join_and_multiple_inputs() -> None:
     assert args.record_command == "add"
     assert args.join is True
     assert args.inputs == ["https://t.me/+invite", "https://t.me/records"]
+
+def test_status_command_parses() -> None:
+    args = build_parser().parse_args(["status"])
+    assert args.command == "status"
