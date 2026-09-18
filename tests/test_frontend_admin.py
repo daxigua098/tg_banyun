@@ -36,3 +36,12 @@ def test_route_builder_has_clear_source_and_target_labels() -> None:
     assert 'routePreviewCount' in source
     assert 'sourceName(group.source_id)' in source
     assert 'targetName(row.target_id)' in source
+
+
+def test_source_page_displays_all_bound_targets() -> None:
+    source = (PROJECT_ROOT / "frontend" / "src" / "App.vue").read_text(encoding="utf-8")
+
+    assert "routesForSource(row.id)" in source
+    assert "routesForSource(syncForm.sourceId)" in source
+    assert "该源还没有建立接收目标" in source
+    assert "该搬运源还没有启用的接收目标" in source

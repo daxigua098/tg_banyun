@@ -74,6 +74,21 @@
                 <el-switch v-model="row.enabled" @change="changeSourceEnabled(row)" />
               </template>
             </el-table-column>
+            <el-table-column label="接收目标" min-width="280">
+              <template #default="{ row }">
+                <div v-if="routesForSource(row.id).length" class="route-tag-list">
+                  <el-tag
+                    v-for="route in routesForSource(row.id)"
+                    :key="route.id"
+                    :type="route.enabled ? 'success' : 'info'"
+                    effect="plain"
+                  >
+                    {{ targetName(route.target_id) }}
+                  </el-tag>
+                </div>
+                <span v-else class="route-empty-text">未建立接收目标</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="sync_status" label="同步状态" width="110" />
             <el-table-column prop="last_synced_message_id" label="最新消息 ID" width="150" />
             <el-table-column label="操作" width="130">
@@ -535,6 +550,19 @@
     <el-dialog v-model="syncDialog" title="立即搬运历史消息" width="480px">
       <el-form label-width="100px">
         <el-form-item label="搬运源"><strong>{{ syncForm.sourceName }}</strong></el-form-item>
+        <el-form-item label="接收目标">
+          <div v-if="routesForSource(syncForm.sourceId).length" class="route-tag-list">
+            <el-tag
+              v-for="route in routesForSource(syncForm.sourceId)"
+              :key="route.id"
+              :type="route.enabled ? 'success' : 'info'"
+              effect="plain"
+            >
+              {{ targetName(route.target_id) }}
+            </el-tag>
+          </div>
+          <span v-else class="route-empty-text">该源还没有建立接收目标</span>
+        </el-form-item>
         <el-form-item label="搬运数量"><el-input-number v-model="syncForm.limit" :min="1" :max="5000" /></el-form-item>
         <el-form-item label="关键词筛选">
           <el-input v-model="syncForm.keywordsText" placeholder="可选，多个关键词用逗号分隔，例如：AI,主播,少女" />
@@ -847,6 +875,10 @@ async function changeSourceEnabled(row) {
 async function changeTargetEnabled(row) {
   await setTargetEnabled(row.id, row.enabled)
   ElMessage.success('目标状态已更新')
+}
+
+function routesForSource(sourceId) {
+  return routes.value.filter((route) => route.source_id === sourceId)
 }
 
 function sourceName(sourceId) {
@@ -1245,6 +1277,9 @@ function openImmediateSync(row) {
 
 async function submitImmediateSync() {
   if (!syncForm.value.limit || syncForm.value.limit < 1) return ElMessage.warning('请输入搬运数量')
+  if (!routesForSource(syncForm.value.sourceId).some((route) => route.enabled)) {
+    return ElMessage.warning('该搬运源还没有启用的接收目标，请先在“路由关系”中建立搭配')
+  }
   const keywords = String(syncForm.value.keywordsText || '').split(',').map((item) => item.trim()).filter(Boolean)
   await enqueueSync(syncForm.value.sourceId, syncForm.value.limit, keywords)
   ElMessage.success('搬运命令已提交，后台将按顺序处理')
