@@ -31,6 +31,7 @@ from app.services.backup_service import (
 from app.services.control_command_service import (
     COMMAND_ADD_SOURCE,
     COMMAND_ADD_TARGET,
+    COMMAND_NOTIFY_ADMINS,
     COMMAND_SYNC,
     load_command_payload,
 )
@@ -330,6 +331,11 @@ class RuntimeService:
                         str(payload.get("input", "")),
                     )
             return {"target_id": target.id, "title": target.title}
+        if command.command_type == COMMAND_NOTIFY_ADMINS:
+            text = str(payload.get("text") or "TG-Mirror-Bot 异常通知")
+            if self.notifier is not None:
+                await self.notifier.send(text)
+            return {"notified": self.notifier is not None}
         if command.command_type == COMMAND_SYNC:
             source_value = payload.get("source_id", "all")
             limit = int(payload.get("limit") or self.config.history.default_limit)

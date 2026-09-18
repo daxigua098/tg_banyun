@@ -133,6 +133,8 @@ class WebConfig(BaseModel):
     admin_password: str = ""
     session_secret: str = ""
     session_hours: int = Field(default=24, ge=1)
+    max_login_failures: int = Field(default=5, ge=1)
+    login_window_minutes: int = Field(default=15, ge=1)
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:5173",

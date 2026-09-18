@@ -13,6 +13,7 @@ from app.models import ControlCommand
 COMMAND_ADD_SOURCE = "add_source"
 COMMAND_ADD_TARGET = "add_target"
 COMMAND_SYNC = "sync"
+COMMAND_NOTIFY_ADMINS = "notify_admins"
 
 
 async def enqueue_control_command(
@@ -21,7 +22,13 @@ async def enqueue_control_command(
     payload: dict[str, Any],
 ) -> ControlCommand:
     """Persist one command for the runtime process."""
-    if command_type not in {COMMAND_ADD_SOURCE, COMMAND_ADD_TARGET, COMMAND_SYNC}:
+    supported_commands = {
+        COMMAND_ADD_SOURCE,
+        COMMAND_ADD_TARGET,
+        COMMAND_SYNC,
+        COMMAND_NOTIFY_ADMINS,
+    }
+    if command_type not in supported_commands:
         raise ValueError(f"不支持的控制命令：{command_type}")
     command = ControlCommand(
         command_type=command_type,

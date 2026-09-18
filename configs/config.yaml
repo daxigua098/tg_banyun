@@ -60,6 +60,8 @@ web:
   admin_password: ""
   session_secret: ""
   session_hours: 24
+  max_login_failures: 5
+  login_window_minutes: 15
   cors_origins:
     - http://localhost:5173
     - http://127.0.0.1:5173
