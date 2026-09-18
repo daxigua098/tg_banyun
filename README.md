@@ -139,6 +139,30 @@ python main.py status
 python main.py stats
 ```
 
+## 备份与恢复
+
+创建备份：
+
+```powershell
+python main.py backup
+```
+
+默认生成到 `backups\tg-mirror-bot-时间.zip`，包含：
+
+- SQLite 数据库在线快照
+- `.env`
+- `configs/config.yaml`
+- Telegram session 文件
+
+恢复前必须先停止后台进程：
+
+```powershell
+.\scripts\stop-background.ps1
+python main.py restore .\backups\tg-mirror-bot-时间.zip --yes
+```
+
+备份包含登录凭证和 session，必须按机密文件管理，不能提交 Git 或发送给他人。
+
 ## 后台运行
 
 Windows 立即后台启动并跳过历史同步：
@@ -263,3 +287,4 @@ python main.py bot
 - 投递语义是至少一次；进程在发送成功但提交数据库前崩溃时，重启后可能重复发送。
 - 管理 Bot 当前是文本命令界面，没有 Inline Keyboard 和审核流程。
 - 不能绕过 Telegram 或目标频道的权限限制。
+

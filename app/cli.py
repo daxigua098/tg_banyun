@@ -25,6 +25,7 @@ from app.core.runtime_lock import RuntimeLock
 from app.core.transfer import SequentialTransferService
 from app.database import dispose_database, get_session_factory, init_database
 from app.models import DeliveryJob, Route, Source, Target
+from app.services.backup_service import BackupError, create_backup, restore_backup
 from app.services.history_service import HistorySyncService
 from app.services.management_bot_service import ManagementBotService
 from app.services.management_command_service import ManagementCommandService
@@ -380,6 +381,25 @@ async def command_bot(args: argparse.Namespace) -> None:
         await _with_client(config, run)
 
 
+async def command_backup(args: argparse.Namespace) -> None:
+    config = load_config(args.config)
+    archive = create_backup(config.project_root, output_dir=args.output)
+    print(f"Backup created: {archive}")
+
+
+async def command_restore(args: argparse.Namespace) -> None:
+    config = load_config(args.config)
+    try:
+        restored = restore_backup(
+            config.project_root,
+            Path(args.archive),
+            yes=args.yes,
+        )
+    except BackupError as exc:
+        raise ValueError(str(exc)) from exc
+    print("Restored: " + ", ".join(restored))
+
+
 async def command_status(args: argparse.Namespace) -> None:
     config, session_factory = await _prepare(args.config)
     heartbeat = read_runtime_status(config.project_root / "data" / "runtime_status.json")
@@ -494,6 +514,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not run automatic history catch-up at startup",
     )
     subparsers.add_parser("bot", help="Run only the management bot")
+    backup = subparsers.add_parser("backup", help="Create a backup archive")
+    backup.add_argument("--output", type=Path, default=None)
+    restore = subparsers.add_parser("restore", help="Restore from a backup archive")
+    restore.add_argument("archive", type=Path)
+    restore.add_argument("--yes", action="store_true", help="Confirm overwrite")
     subparsers.add_parser("status", help="Show runtime and database status")
     subparsers.add_parser("stats", help="Show delivery statistics")
     return parser
@@ -536,6 +561,10 @@ async def _dispatch(args: argparse.Namespace) -> None:
         await command_bot(args)
     elif args.command == "status":
         await command_status(args)
+    elif args.command == "backup":
+        await command_backup(args)
+    elif args.command == "restore":
+        await command_restore(args)
     elif args.command == "stats":
         await command_stats(args)
 
@@ -560,3 +589,4 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - CLI should show a concise error
         print(f"Error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
+
