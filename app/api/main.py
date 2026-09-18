@@ -32,7 +32,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import PROJECT_ROOT, AdditionalConfig, AdImageConfig, AppConfig, load_config
 from app.core.auth import create_session_token, verify_session_token
 from app.core.heartbeat import is_process_running, read_runtime_status
-from app.core.runtime_control import is_runtime_paused, set_runtime_paused
+from app.core.runtime_control import (
+    is_runtime_paused,
+    is_runtime_stopped,
+    set_runtime_paused,
+    set_runtime_stop_requested,
+)
 from app.database import dispose_database, get_session_factory, init_database
 from app.models import DeliveryJob, Route, Source, Target
 from app.services.ad_image_service import (
@@ -52,6 +57,7 @@ from app.services.control_command_service import (
     list_control_commands,
     load_command_payload,
 )
+from app.services.delivery_job_service import cancel_pending_jobs
 from app.services.login_history_service import (
     list_login_history,
     record_login_attempt,
@@ -496,11 +502,11 @@ def create_app() -> FastAPI:
         job_rows = await session.execute(
             select(DeliveryJob.status, func.count(DeliveryJob.id)).group_by(DeliveryJob.status)
         )
+        control_path = config.project_root / "data" / "runtime_control.json"
         return {
             "runtime": state,
-            "paused": is_runtime_paused(
-                config.project_root / "data" / "runtime_control.json"
-            ),
+            "paused": is_runtime_paused(control_path),
+            "stopped": is_runtime_stopped(control_path),
             "heartbeat": heartbeat,
             "jobs": {str(status): int(count) for status, count in job_rows.all()},
             "source_count": int(
@@ -713,8 +719,33 @@ def create_app() -> FastAPI:
     @app.post("/api/resume", dependencies=[Depends(require_auth)])
     async def resume() -> dict[str, bool]:
         config: AppConfig = app.state.config
-        set_runtime_paused(config.project_root / "data" / "runtime_control.json", False)
-        return {"paused": False}
+        control_path = config.project_root / "data" / "runtime_control.json"
+        set_runtime_stop_requested(control_path, False)
+        set_runtime_paused(control_path, False)
+        return {"paused": False, "stopped": False}
+
+    @app.post("/api/stop", dependencies=[Depends(require_auth)])
+    async def stop_all(
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, int | bool]:
+        config: AppConfig = app.state.config
+        control_path = config.project_root / "data" / "runtime_control.json"
+        cancelled = await cancel_pending_jobs(session)
+        set_runtime_stop_requested(control_path, True)
+        set_runtime_paused(control_path, True)
+        processing = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(DeliveryJob)
+                .where(DeliveryJob.status == "processing")
+            )
+            or 0
+        )
+        return {
+            "stopped": True,
+            "cancelled": cancelled,
+            "processing": processing,
+        }
 
     @app.post("/api/control/add-source", dependencies=[Depends(require_auth)])
     async def command_add_source(

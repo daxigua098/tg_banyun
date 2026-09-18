@@ -177,3 +177,35 @@ def test_sync_progress_uses_completed_jobs_not_command_status() -> None:
     assert calculate_progress_percent(total=130, completed=65) == 50
     assert calculate_progress_percent(total=130, completed=130) == 100
     assert calculate_progress_percent(total=0, completed=0) == 100
+
+
+def test_stop_endpoint_requests_runtime_stop_and_cancels_waiting_jobs(monkeypatch) -> None:
+    config = load_config()
+    config.web.api_token = ""
+    config.web.admin_password = ""
+    config.web.session_secret = ""
+    monkeypatch.setattr(api_main, "load_config", lambda: config)
+    calls: dict[str, object] = {}
+
+    async def fake_cancel_pending_jobs(session):
+        calls["cancelled_session"] = session
+        return 7
+
+    def fake_set_stop(path, stopped):
+        calls["stop"] = (path, stopped)
+
+    def fake_set_paused(path, paused):
+        calls["paused"] = (path, paused)
+
+    monkeypatch.setattr(api_main, "cancel_pending_jobs", fake_cancel_pending_jobs)
+    monkeypatch.setattr(api_main, "set_runtime_stop_requested", fake_set_stop)
+    monkeypatch.setattr(api_main, "set_runtime_paused", fake_set_paused)
+
+    with TestClient(create_app()) as client:
+        response = client.post("/api/stop")
+
+    assert response.status_code == 200
+    assert response.json()["stopped"] is True
+    assert response.json()["cancelled"] == 7
+    assert calls["stop"] == (config.project_root / "data" / "runtime_control.json", True)
+    assert calls["paused"] == (config.project_root / "data" / "runtime_control.json", True)

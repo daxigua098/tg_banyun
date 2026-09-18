@@ -314,3 +314,45 @@ async def test_permanent_delivery_failure_notifies_admin() -> None:
     assert len(notifier.failures) == 1
     assert "投递永久失败" in notifier.failures[0]
     await engine.dispose()
+
+
+async def test_process_pending_stops_before_next_job_when_requested() -> None:
+    session_factory, engine = await _build_factory()
+    fake_client = FakeTelegramClient()
+    config = AppConfig(transfer=TransferConfig(delay_seconds=0))
+
+    async with session_factory() as session:
+        source = Source(
+            raw_input="@source",
+            normalized_key="username:source",
+            tg_id=100,
+            title="Source",
+        )
+        target = Target(
+            raw_input="@target",
+            normalized_key="username:target",
+            tg_id=201,
+            title="Target",
+        )
+        session.add_all([source, target])
+        await session.commit()
+        session.add(Route(source_id=source.id, target_id=target.id))
+        await session.commit()
+        source_id = source.id
+
+    service = SequentialTransferService(fake_client, session_factory, config)
+    await service.enqueue_message(source_id, 1)
+    await service.enqueue_message(source_id, 2)
+    processed = await service.process_pending(
+        should_stop=lambda: len(fake_client.calls) >= 1,
+    )
+
+    assert processed == 1
+    assert fake_client.calls == [(201, 1)]
+    async with session_factory() as session:
+        jobs = list(
+            await session.scalars(select(DeliveryJob).order_by(DeliveryJob.id.asc()))
+        )
+    assert [job.status for job in jobs] == ["success", "pending"]
+
+    await engine.dispose()

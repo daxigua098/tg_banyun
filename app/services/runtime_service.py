@@ -18,7 +18,7 @@ from app.config import AppConfig
 from app.core.content_filter import should_transfer_for_source
 from app.core.heartbeat import HeartbeatWriter
 from app.core.message_batch import MessageBatch
-from app.core.runtime_control import is_runtime_paused
+from app.core.runtime_control import is_runtime_paused, is_runtime_stopped
 from app.core.sender_filter import is_admin_or_channel_post
 from app.core.transfer import SequentialTransferService
 from app.models import ControlCommand, Route, Source, Target
@@ -36,6 +36,7 @@ from app.services.control_command_service import (
     COMMAND_SYNC,
     load_command_payload,
 )
+from app.services.delivery_job_service import cancel_pending_jobs
 from app.services.history_service import HistorySyncService
 from app.services.notifier_service import AdminNotifier
 from app.services.rule_service import get_source_rule
@@ -81,6 +82,18 @@ class RuntimeService:
         )
         self._album_filter = events.Album()
 
+    def _transfer_should_stop(self) -> bool:
+        return is_runtime_paused(self.control_path) or is_runtime_stopped(self.control_path)
+
+    async def _process_transfer_queue(self) -> None:
+        if self._transfer_should_stop():
+            return
+        await self.transfer.process_pending(should_stop=self._transfer_should_stop)
+
+    async def _cancel_waiting_work(self) -> None:
+        async with self.session_factory() as session:
+            await cancel_pending_jobs(session)
+
     @staticmethod
     def _is_non_album(event: events.NewMessage.Event) -> bool:
         return getattr(event.message, "grouped_id", None) is None
@@ -104,8 +117,7 @@ class RuntimeService:
         )
 
         try:
-            if not is_runtime_paused(self.control_path):
-                await self.transfer.process_pending()
+            await self._process_transfer_queue()
             await self._sync_history_sequentially()
 
             worker = asyncio.create_task(
@@ -229,12 +241,13 @@ class RuntimeService:
                         f"错误：{type(exc).__name__}: {exc}"
                     )
                 continue
-            if not is_runtime_paused(self.control_path):
-                await self.transfer.process_pending()
+            await self._process_transfer_queue()
 
     async def _on_new_message(self, event: events.NewMessage.Event) -> None:
         chat_id = event.chat_id
         if chat_id is None:
+            return
+        if self._transfer_should_stop():
             return
         source_id = await self._source_id_for_chat(int(chat_id))
         if source_id is not None and await self._message_allowed(source_id, event.message):
@@ -244,6 +257,8 @@ class RuntimeService:
     async def _on_album(self, event: events.Album.Event) -> None:
         chat_id = event.chat_id
         if chat_id is None:
+            return
+        if self._transfer_should_stop():
             return
         source_id = await self._source_id_for_chat(int(chat_id))
         if source_id is None:
@@ -402,14 +417,18 @@ class RuntimeService:
             try:
                 item = await asyncio.wait_for(self.queue.get(), timeout=1.0)
             except TimeoutError:
+                if is_runtime_stopped(self.control_path):
+                    await self._cancel_waiting_work()
+                    continue
                 await self._process_control_command_once()
-                if not is_runtime_paused(self.control_path):
-                    await self.transfer.process_pending()
+                await self._process_transfer_queue()
                 continue
 
             try:
                 if item is None:
                     return
+                if is_runtime_stopped(self.control_path):
+                    continue
                 source_id, batch = item
                 await self.transfer.enqueue_batch(source_id, batch)
                 async with self.session_factory() as session:
@@ -421,8 +440,10 @@ class RuntimeService:
                         )
                         await session.commit()
                 await self._process_control_command_once()
-                if not is_runtime_paused(self.control_path):
-                    await self.transfer.process_pending()
+                if is_runtime_stopped(self.control_path):
+                    await self._cancel_waiting_work()
+                    continue
+                await self._process_transfer_queue()
             finally:
                 self.queue.task_done()
 

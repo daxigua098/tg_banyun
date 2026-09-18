@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -116,14 +116,29 @@ class SequentialTransferService:
                 await session.refresh(job)
             return [job.id for job in new_jobs]
 
-    async def process_pending(self, *, wait_for_retry: bool = False) -> int:
+    async def process_pending(
+        self,
+        *,
+        wait_for_retry: bool = False,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> int:
         """Process eligible jobs sequentially, one at a time."""
         async with self._worker_lock:
-            return await self._process_pending_locked(wait_for_retry=wait_for_retry)
+            return await self._process_pending_locked(
+                wait_for_retry=wait_for_retry,
+                should_stop=should_stop,
+            )
 
-    async def _process_pending_locked(self, *, wait_for_retry: bool) -> int:
+    async def _process_pending_locked(
+        self,
+        *,
+        wait_for_retry: bool,
+        should_stop: Callable[[], bool] | None,
+    ) -> int:
         processed = 0
         while True:
+            if should_stop is not None and should_stop():
+                break
             job_id = await self._next_ready_job_id()
             if job_id is None:
                 if not wait_for_retry:
@@ -134,8 +149,12 @@ class SequentialTransferService:
                 await asyncio.sleep(min(delay, 60.0))
                 continue
 
+            if should_stop is not None and should_stop():
+                break
             await self._process_job(job_id)
             processed += 1
+            if should_stop is not None and should_stop():
+                break
             if self.config.transfer.delay_seconds:
                 await asyncio.sleep(self.config.transfer.delay_seconds)
         return processed

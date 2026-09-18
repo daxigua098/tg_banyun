@@ -43,8 +43,9 @@
         </div>
         <div class="actions">
           <el-button @click="refreshAll">刷新</el-button>
-          <el-button type="warning" :disabled="status?.paused" @click="pause">暂停</el-button>
-          <el-button type="success" :disabled="!status?.paused" @click="resume">恢复</el-button>
+          <el-button type="warning" :disabled="status?.paused || status?.stopped" @click="pause">暂停</el-button>
+          <el-button type="success" :disabled="!status?.paused && !status?.stopped" @click="resume">恢复</el-button>
+          <el-button type="danger" plain :disabled="status?.stopped" @click="stopAll">停止全部</el-button>
           <el-button type="danger" plain @click="retry">重试失败</el-button>
           <el-button plain @click="logout">退出登录</el-button>
         </div>
@@ -54,7 +55,7 @@
         <section v-if="activePage === 'dashboard'">
           <div class="stat-grid">
             <el-card><div class="stat-label">运行状态</div><div class="stat-value">{{ runtimeText }}</div></el-card>
-            <el-card><div class="stat-label">搬运状态</div><div class="stat-value">{{ status?.paused ? '已暂停' : '运行中' }}</div></el-card>
+            <el-card><div class="stat-label">搬运状态</div><div class="stat-value">{{ status?.stopped ? '已停止' : status?.paused ? '已暂停' : '运行中' }}</div></el-card>
             <el-card><div class="stat-label">源 / 目标</div><div class="stat-value">{{ status?.source_count || 0 }} / {{ status?.target_count || 0 }}</div></el-card>
             <el-card><div class="stat-label">路由</div><div class="stat-value">{{ status?.route_count || 0 }}</div></el-card>
           </div>
@@ -334,8 +335,13 @@
         <el-card v-else-if="activePage === 'queue'">
           <template #header>
             <div class="filters">
-              <span>每次点击只创建 1 条任务；这里统计实际投递进度，每 2 秒自动刷新</span>
-              <el-button @click="loadQueueCommands">立即刷新</el-button>
+              <span>每次点击只创建 1 条任务；暂停会阻止后续投递，停止会取消等待中的任务</span>
+              <div>
+                <el-button type="warning" :disabled="status?.paused || status?.stopped" @click="pause">暂停任务</el-button>
+                <el-button type="success" :disabled="!status?.paused && !status?.stopped" @click="resume">恢复任务</el-button>
+                <el-button type="danger" :disabled="status?.stopped" @click="stopAll">停止全部任务</el-button>
+                <el-button @click="loadQueueCommands">立即刷新</el-button>
+              </div>
             </div>
           </template>
           <el-table :data="commands" stripe>
@@ -421,6 +427,7 @@
               <el-option label="成功" value="success" />
               <el-option label="失败" value="failed" />
               <el-option label="已跳过" value="skipped" />
+              <el-option label="已停止" value="cancelled" />
             </el-select>
             <el-button @click="loadJobs">查询</el-button>
           </div>
@@ -546,6 +553,7 @@ import {
   getTargets,
   pauseRuntime,
   resumeRuntime,
+  stopRuntime,
   retryFailed,
   setSourceEnabled,
   setTargetEnabled,
@@ -674,6 +682,7 @@ const commandStatusLabels = {
   processing: '执行中',
   success: '已完成',
   failed: '失败',
+  cancelled: '已停止',
 }
 
 function commandTypeLabel(value) {
@@ -686,6 +695,7 @@ function commandStatusLabel(value) {
 
 function commandResultLabel(row) {
   if (row.error) return row.error
+  if (row.status === 'cancelled') return '任务已停止'
   if (row.command_type !== 'sync') return row.result || '-'
   if (['pending', 'processing'].includes(row.status)) return '后台正在扫描历史消息'
   let result = {}
@@ -720,6 +730,17 @@ async function pause() {
 async function resume() {
   await resumeRuntime()
   ElMessage.success('已恢复搬运')
+  await refreshAll()
+}
+
+async function stopAll() {
+  await ElMessageBox.confirm(
+    '停止后，等待中的任务会标记为“已停止”，当前正在发送的一条会先完成。确定停止全部任务吗？',
+    '停止确认',
+    { type: 'warning' },
+  )
+  const result = await stopRuntime()
+  ElMessage.success(`已停止全部任务，取消 ${result.cancelled} 条等待任务`)
   await refreshAll()
 }
 
