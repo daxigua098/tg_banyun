@@ -14,6 +14,7 @@ _PRIVATE_LINK_RE = re.compile(r"^c/(?P<internal_id>\d+)(?:/\d+)?$", re.IGNORECAS
 _PUBLIC_MESSAGE_LINK_RE = re.compile(
     r"^(?P<username>[A-Za-z][A-Za-z0-9_]{4,31})/\d+(?:\?.*)?$"
 )
+_MARKDOWN_LINK_RE = re.compile(r"^\[[^\]]+\]\((?P<url>https?://[^)]+)\)$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,8 +45,11 @@ def _strip_known_prefix(value: str) -> str:
 def resolve_chat_input(raw_input: str) -> ResolvedChat:
     """Parse a Telegram username, invite link, private link, or chat ID."""
     raw = raw_input.strip()
+    markdown_match = _MARKDOWN_LINK_RE.fullmatch(raw)
+    if markdown_match:
+        raw = markdown_match.group("url")
     if not raw:
-        raise ValueError("Telegram chat input cannot be empty.")
+        raise ValueError("Telegram 链接不能为空。")
 
     if re.fullmatch(r"-?\d+", raw):
         chat_id = int(raw)
@@ -108,6 +112,7 @@ def resolve_chat_input(raw_input: str) -> ResolvedChat:
         )
 
     raise ValueError(
-        "Unsupported Telegram chat input. Use @username, t.me/username, "
-        "t.me/username/message_id, t.me/+invite, t.me/c/..., or a numeric chat ID."
+        "不支持的 Telegram 链接格式。请发送公开频道链接、消息链接、"
+        "私有邀请链接、@用户名或数字 chat ID；普通网站链接不能作为搬运源或目标。"
     )
+
