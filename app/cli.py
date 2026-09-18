@@ -109,6 +109,12 @@ async def _start_management_bot(
     bot_client = create_management_bot_client(config)
     try:
         await start_management_bot_client(bot_client, config)
+        bot_me = await bot_client.get_me()
+        logger.info(
+            "Management bot connected id={} username={}",
+            bot_me.id,
+            getattr(bot_me, "username", None),
+        )
     except Exception:
         if bot_client.is_connected():
             await bot_client.disconnect()
@@ -610,5 +616,3 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - CLI should show a concise error
         print(f"Error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
-
-
