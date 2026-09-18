@@ -39,7 +39,7 @@ class FakeEvent:
         self.raw_text = text
         self.responses: list[str] = []
 
-    async def respond(self, text: str) -> None:
+    async def respond(self, text: str, buttons: object = None) -> None:
         self.responses.append(text)
 
 
@@ -173,3 +173,12 @@ async def test_management_help_is_grouped_in_chinese() -> None:
     assert "/record_add" in full
     assert "/route_delete" in full
     await engine.dispose()
+
+
+def test_management_bot_has_button_menu() -> None:
+    buttons = ManagementBotService._main_menu_buttons()
+    labels = [button.text for row in buttons for button in row]
+    assert "运行状态" in labels
+    assert "暂停搬运" in labels
+    assert "重试失败" in labels
+    assert "使用帮助" in labels

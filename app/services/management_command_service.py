@@ -31,6 +31,9 @@ from app.services.source_service import (
 
 HELP_TEXT = """TG-Mirror-Bot 管理菜单
 
+控制面板
+/menu  打开中文按钮控制面板
+
 状态与统计
 /status  运行状态
 /stats  投递统计
@@ -50,6 +53,9 @@ HELP_TEXT = """TG-Mirror-Bot 管理菜单
 """
 
 FULL_HELP_TEXT = """TG-Mirror-Bot 完整菜单
+
+控制面板
+/menu  打开中文按钮控制面板
 
 状态与统计
 /status  查看运行状态
@@ -511,6 +517,8 @@ def truncate_response(text: str, limit: int = 3800) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
+
 
 
 
