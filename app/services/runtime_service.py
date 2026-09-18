@@ -47,7 +47,7 @@ class RuntimeService:
             incoming=True,
             func=self._is_non_album,
         )
-        self._album_filter = events.Album(incoming=True)
+        self._album_filter = events.Album()
 
     @staticmethod
     def _is_non_album(event: events.NewMessage.Event) -> bool:
@@ -195,3 +195,4 @@ class RuntimeService:
                 await self.transfer.process_pending()
             finally:
                 self.queue.task_done()
+
