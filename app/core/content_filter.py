@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from app.config import ContentFilterConfig
-from app.services.rule_service import load_keywords
+from app.services.rule_service import load_keywords, load_sender_ids
 
 MediaKind = Literal["photo", "video"]
 
@@ -57,6 +57,14 @@ def should_transfer_for_source(
     if bool(rule.post_only) and not bool(getattr(message, "post", False)):
         return False
 
+    sender_id = getattr(message, "sender_id", None)
+    sender_whitelist = load_sender_ids(rule.sender_whitelist)
+    sender_blacklist = load_sender_ids(rule.sender_blacklist)
+    if sender_whitelist and sender_id not in sender_whitelist:
+        return False
+    if sender_blacklist and sender_id in sender_blacklist:
+        return False
+
     text = str(getattr(message, "raw_text", "") or "").casefold()
     whitelist = [keyword.casefold() for keyword in load_keywords(rule.keyword_whitelist)]
     blacklist = [keyword.casefold() for keyword in load_keywords(rule.keyword_blacklist)]
@@ -71,4 +79,3 @@ def should_transfer_for_source(
     ):
         return False
     return True
-

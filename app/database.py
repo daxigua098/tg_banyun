@@ -108,6 +108,20 @@ async def _migrate_source_rules(connection: AsyncConnection) -> None:
                 "ADD COLUMN admin_only BOOLEAN NOT NULL DEFAULT 0"
             )
         )
+    if "sender_whitelist" not in columns:
+        await connection.execute(
+            text(
+                "ALTER TABLE source_rules "
+                "ADD COLUMN sender_whitelist TEXT NOT NULL DEFAULT '[]'"
+            )
+        )
+    if "sender_blacklist" not in columns:
+        await connection.execute(
+            text(
+                "ALTER TABLE source_rules "
+                "ADD COLUMN sender_blacklist TEXT NOT NULL DEFAULT '[]'"
+            )
+        )
 
 
 async def init_database(config: AppConfig) -> None:
@@ -138,4 +152,3 @@ async def dispose_database() -> None:
         await _engine.dispose()
     _engine = None
     _session_factory = None
-

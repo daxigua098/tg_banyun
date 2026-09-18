@@ -197,9 +197,10 @@ class SourceRule(TimestampMixin, Base):
     allow_video: Mapped[bool] = mapped_column(Boolean, default=True)
     keyword_whitelist: Mapped[str] = mapped_column(Text, default="[]")
     keyword_blacklist: Mapped[str] = mapped_column(Text, default="[]")
+    sender_whitelist: Mapped[str] = mapped_column(Text, default="[]")
+    sender_blacklist: Mapped[str] = mapped_column(Text, default="[]")
     skip_forwarded: Mapped[bool] = mapped_column(Boolean, default=False)
     post_only: Mapped[bool] = mapped_column(Boolean, default=False)
     admin_only: Mapped[bool] = mapped_column(Boolean, default=False)
 
     source: Mapped[Source] = relationship()
-

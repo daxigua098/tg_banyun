@@ -17,6 +17,8 @@ RULE_FIELDS = {
     "forwarded": "skip_forwarded",
     "post": "post_only",
     "admin": "admin_only",
+    "senders": "sender_whitelist",
+    "block_senders": "sender_blacklist",
 }
 
 
@@ -66,6 +68,9 @@ async def set_source_rule(
         rule.skip_forwarded = value.lower() == "skip"
     elif column in {"post_only", "admin_only"}:
         setattr(rule, column, _parse_toggle(value))
+    elif column in {"sender_whitelist", "sender_blacklist"}:
+        sender_ids = _parse_sender_ids(value)
+        setattr(rule, column, json.dumps(sender_ids))
     else:
         keywords = [item.strip() for item in value.split(",") if item.strip()]
         setattr(rule, column, json.dumps(keywords, ensure_ascii=False))
@@ -84,6 +89,36 @@ def _parse_toggle(value: str) -> bool:
     raise ValueError("开关值只能使用 on/off。")
 
 
+def _parse_sender_ids(value: str) -> list[int]:
+    sender_ids: list[int] = []
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            sender_ids.append(int(item))
+        except ValueError as exc:
+            raise ValueError(f"发送者 ID 必须是数字：{item}") from exc
+    return sender_ids
+
+
+def load_sender_ids(value: str) -> list[int]:
+    """Load a sender ID list from JSON storage."""
+    try:
+        items = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(items, list):
+        return []
+    result: list[int] = []
+    for item in items:
+        try:
+            result.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
 def load_keywords(value: str) -> list[str]:
     """Load a keyword list from its JSON storage."""
     try:
@@ -91,4 +126,3 @@ def load_keywords(value: str) -> list[str]:
     except (TypeError, json.JSONDecodeError):
         return []
     return [str(item) for item in items] if isinstance(items, list) else []
-

@@ -97,3 +97,33 @@ def test_post_only_rule_rejects_group_messages() -> None:
     assert should_transfer_for_source(group_message, config, rule) is False
     assert should_transfer_for_source(channel_post, config, rule) is True
 
+
+def test_sender_whitelist_filters_other_accounts() -> None:
+    rule = SourceRule(
+        source_id=1,
+        allow_photo=True,
+        allow_video=True,
+        sender_whitelist="[111, 222]",
+    )
+    allowed = SimpleNamespace(
+        photo=object(),
+        video=None,
+        media=None,
+        raw_text="",
+        sender_id=111,
+        forward=None,
+        fwd_from=None,
+    )
+    blocked = SimpleNamespace(
+        photo=object(),
+        video=None,
+        media=None,
+        raw_text="",
+        sender_id=999,
+        forward=None,
+        fwd_from=None,
+    )
+    config = ContentFilterConfig(media_only=True)
+
+    assert should_transfer_for_source(allowed, config, rule) is True
+    assert should_transfer_for_source(blocked, config, rule) is False

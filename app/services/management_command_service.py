@@ -21,6 +21,7 @@ from app.services.rule_service import (
     get_source_rule,
     list_source_rules,
     load_keywords,
+    load_sender_ids,
     set_source_rule,
 )
 from app.services.source_service import (
@@ -94,9 +95,11 @@ FULL_HELP_TEXT = """TG-Mirror-Bot 完整菜单
 /rules  查看全部规则
 /rule <源ID>  查看单个规则
 /rule_set <源ID> <字段> <值>
+/senders <源ID> [数量]  查看最近发言账号 ID
 字段：
 photo on/off、video on/off、forwarded skip/allow、post on/off、admin on/off
 whitelist 词1,词2、blacklist 词1,词2
+senders ID1,ID2、block_senders ID1,ID2
 
 记录接收群
 /record_add [--join] <群组> [...]
@@ -163,6 +166,8 @@ class ManagementCommandService:
             return await self._rule(args)
         if command == "rule_set":
             return await self._rule_set(args)
+        if command == "senders":
+            return await self._senders(args)
         if command == "jobs":
             return await self._jobs(args)
         if command == "pause":
@@ -349,6 +354,10 @@ class ManagementCommandService:
         for source, rule in rules:
             whitelist = ",".join(load_keywords(rule.keyword_whitelist)) or "-"
             blacklist = ",".join(load_keywords(rule.keyword_blacklist)) or "-"
+            senders = ",".join(str(item) for item in load_sender_ids(rule.sender_whitelist)) or "-"
+            blocked_senders = (
+                ",".join(str(item) for item in load_sender_ids(rule.sender_blacklist)) or "-"
+            )
             lines.append(
                 f"源 {source.id} {source.title or source.raw_input}\n"
                 f"图片={'开' if rule.allow_photo else '关'} "
@@ -356,7 +365,8 @@ class ManagementCommandService:
                 f"转发={'跳过' if rule.skip_forwarded else '允许'} "
                 f"仅频道={'是' if rule.post_only else '否'} "
                 f"仅管理={'是' if rule.admin_only else '否'}\n"
-                f"白名单={whitelist} 黑名单={blacklist}"
+                f"白名单={whitelist} 黑名单={blacklist}\n"
+                f"指定账号={senders} 排除账号={blocked_senders}"
             )
         return "\n\n".join(lines)
 
@@ -366,6 +376,8 @@ class ManagementCommandService:
         source_id = self._parse_id(args[0], "源ID")
         async with self.session_factory() as session:
             rule = await get_source_rule(session, source_id)
+        senders = ",".join(str(item) for item in load_sender_ids(rule.sender_whitelist))
+        blocked_senders = ",".join(str(item) for item in load_sender_ids(rule.sender_blacklist))
         return (
             f"源 {source_id} 过滤规则\n"
             f"图片：{'开启' if rule.allow_photo else '关闭'}\n"
@@ -374,7 +386,9 @@ class ManagementCommandService:
             f"仅频道帖子：{'是' if rule.post_only else '否'}\n"
             f"仅管理员：{'是' if rule.admin_only else '否'}\n"
             f"关键词白名单：{','.join(load_keywords(rule.keyword_whitelist)) or '无'}\n"
-            f"关键词黑名单：{','.join(load_keywords(rule.keyword_blacklist)) or '无'}"
+            f"关键词黑名单：{','.join(load_keywords(rule.keyword_blacklist)) or '无'}\n"
+            f"指定账号：{senders or '无'}\n"
+            f"排除账号：{blocked_senders or '无'}"
         )
 
     async def _rule_set(self, args: list[str]) -> str:
@@ -385,6 +399,10 @@ class ManagementCommandService:
         value = " ".join(args[2:])
         async with self.session_factory() as session:
             rule = await set_source_rule(session, source_id, field, value)
+        whitelist = ",".join(load_keywords(rule.keyword_whitelist))
+        blacklist = ",".join(load_keywords(rule.keyword_blacklist))
+        senders = ",".join(str(item) for item in load_sender_ids(rule.sender_whitelist))
+        blocked_senders = ",".join(str(item) for item in load_sender_ids(rule.sender_blacklist))
         return (
             f"源 {source_id} 规则已更新\n"
             f"图片={'开' if rule.allow_photo else '关'} "
@@ -392,9 +410,42 @@ class ManagementCommandService:
             f"转发={'跳过' if rule.skip_forwarded else '允许'} "
             f"仅频道={'是' if rule.post_only else '否'} "
             f"仅管理={'是' if rule.admin_only else '否'}\n"
-            f"白名单={','.join(load_keywords(rule.keyword_whitelist)) or '-'} "
-            f"黑名单={','.join(load_keywords(rule.keyword_blacklist)) or '-'}"
+            f"白名单={whitelist or '-'} 黑名单={blacklist or '-'}\n"
+            f"指定账号={senders or '-'} 排除账号={blocked_senders or '-'}"
         )
+
+    async def _senders(self, args: list[str]) -> str:
+        if not args:
+            raise ValueError("用法：/senders <源ID> [数量]")
+        source_id = self._parse_id(args[0], "源ID")
+        limit = self._parse_limit(args[1] if len(args) > 1 else None, default=30)
+        async with self.session_factory() as session:
+            source = await session.get(Source, source_id)
+        if source is None:
+            raise ValueError(f"源 {source_id} 不存在。")
+        entity = source.tg_id or source.raw_input
+        counts: dict[int, int] = {}
+        names: dict[int, str] = {}
+        async with self._operation_context():
+            async for message in self.user_client.iter_messages(entity, limit=limit):
+                sender_id = getattr(message, "sender_id", None)
+                if sender_id is None:
+                    continue
+                sender_id = int(sender_id)
+                counts[sender_id] = counts.get(sender_id, 0) + 1
+                if sender_id in names:
+                    continue
+                sender = await message.get_sender()
+                username = getattr(sender, "username", None) if sender else None
+                title = getattr(sender, "title", None) if sender else None
+                first_name = getattr(sender, "first_name", None) if sender else None
+                names[sender_id] = title or first_name or (f"@{username}" if username else "-")
+        if not counts:
+            return "没有找到可识别发送者的最近消息。"
+        lines = [f"源 {source_id} 最近发送者（最多 {limit} 条消息）"]
+        for sender_id, count in sorted(counts.items(), key=lambda item: item[1], reverse=True):
+            lines.append(f"{sender_id}  {names.get(sender_id, '-')}  消息数={count}")
+        return "\n".join(lines)
 
     async def _stats(self) -> str:
         stats = await self.transfer.stats()
@@ -595,5 +646,3 @@ def truncate_response(text: str, limit: int = 3800) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
-
-
