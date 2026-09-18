@@ -23,6 +23,18 @@ from app.core.source_resolver import resolve_chat_input
             "Example_Channel",
             "username:example_channel",
         ),
+        (
+            "<https://t.me/Example_Channel/123?single>",
+            "username",
+            "Example_Channel",
+            "username:example_channel",
+        ),
+        (
+            "tg://resolve?domain=Example_Channel&post=123",
+            "username",
+            "Example_Channel",
+            "username:example_channel",
+        ),
         ("-1001234567890", "chat_id", "-1001234567890", "chat_id:-1001234567890"),
         ("123456789", "chat_id", "123456789", "chat_id:123456789"),
         (
@@ -53,6 +65,8 @@ def test_resolve_invite_link() -> None:
 
 
 def test_reject_invalid_input() -> None:
-    with pytest.raises(ValueError, match="不支持的 Telegram"):
+    with pytest.raises(ValueError, match="普通网站"):
         resolve_chat_input("https://example.com")
+
+
 

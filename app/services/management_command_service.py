@@ -381,7 +381,15 @@ class ManagementCommandService:
             async with self.session_factory() as session:
                 results = []
                 for raw_input in inputs:
-                    source = await add_source(session, self.user_client, raw_input, join=join)
+                    try:
+                        source = await add_source(
+                            session,
+                            self.user_client,
+                            raw_input,
+                            join=join,
+                        )
+                    except ValueError as exc:
+                        raise ValueError(f"{raw_input}：{exc}") from exc
                     results.append(f"[{source.id}] {source.title or raw_input}")
         return "源已添加：\n" + "\n".join(results)
 
@@ -392,7 +400,10 @@ class ManagementCommandService:
             async with self.session_factory() as session:
                 results = []
                 for raw_input in args:
-                    target = await add_target(session, self.user_client, raw_input)
+                    try:
+                        target = await add_target(session, self.user_client, raw_input)
+                    except ValueError as exc:
+                        raise ValueError(f"{raw_input}：{exc}") from exc
                     results.append(f"[{target.id}] {target.title or raw_input}")
         return "目标已添加：\n" + "\n".join(results)
 
@@ -500,5 +511,6 @@ def truncate_response(text: str, limit: int = 3800) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
 
 
