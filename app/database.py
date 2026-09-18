@@ -86,6 +86,21 @@ async def _migrate_delivery_jobs(connection: AsyncConnection) -> None:
         )
 
 
+async def _migrate_display_names(connection: AsyncConnection) -> None:
+    """Add custom display names to older source and target tables."""
+    for table_name in ("sources", "targets"):
+        columns = await connection.run_sync(
+            lambda sync_connection, table=table_name: {
+                column["name"]
+                for column in inspect(sync_connection).get_columns(table)
+            }
+        )
+        if "display_name" not in columns:
+            await connection.execute(
+                text(f"ALTER TABLE {table_name} ADD COLUMN display_name VARCHAR(255)")
+            )
+
+
 async def _migrate_source_rules(connection: AsyncConnection) -> None:
     """Add sender filtering columns to databases created by older MVP versions."""
     columns = await connection.run_sync(
@@ -131,6 +146,7 @@ async def init_database(config: AppConfig) -> None:
         await connection.run_sync(Base.metadata.create_all)
         await _migrate_delivery_jobs(connection)
         await _migrate_source_rules(connection)
+        await _migrate_display_names(connection)
 
 
 @asynccontextmanager

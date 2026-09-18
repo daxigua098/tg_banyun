@@ -60,9 +60,12 @@
         </section>
 
         <el-card v-else-if="activePage === 'sources'">
+          <template #header>
+            <div class="filters"><el-button type="primary" @click="sourceDialog = true">添加搬运源</el-button></div>
+          </template>
           <el-table :data="sources" stripe>
             <el-table-column prop="id" label="ID" width="70" />
-            <el-table-column prop="title" label="名称" min-width="180" />
+            <el-table-column label="名称" min-width="180"><template #default="{ row }">{{ row.display_name || row.title }}</template></el-table-column>
             <el-table-column prop="username" label="用户名" min-width="140" />
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
@@ -75,9 +78,12 @@
         </el-card>
 
         <el-card v-else-if="activePage === 'targets'">
+          <template #header>
+            <div class="filters"><el-button type="primary" @click="targetDialog = true">添加接收目标</el-button></div>
+          </template>
           <el-table :data="targets" stripe>
             <el-table-column prop="id" label="ID" width="70" />
-            <el-table-column prop="title" label="名称" min-width="180" />
+            <el-table-column label="名称" min-width="180"><template #default="{ row }">{{ row.display_name || row.title }}</template></el-table-column>
             <el-table-column prop="username" label="用户名" min-width="140" />
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
@@ -195,7 +201,8 @@
           <el-card class="command-card">
             <template #header>添加搬运源</template>
             <div class="command-row">
-              <el-input v-model="commandForm.source" placeholder="频道链接、@用户名或私有邀请链接" />
+              <el-input v-model="commandForm.sourceName" placeholder="自定义名称，例如：新闻源" />
+              <el-input v-model="commandForm.source" placeholder="@用户名、频道链接或私有邀请链接" />
               <el-checkbox v-model="commandForm.join">允许加入</el-checkbox>
               <el-button type="primary" @click="queueAddSource">提交</el-button>
             </div>
@@ -203,6 +210,7 @@
           <el-card class="command-card">
             <template #header>添加接收目标</template>
             <div class="command-row">
+              <el-input v-model="commandForm.targetName" placeholder="自定义名称，例如：接收群" />
               <el-input v-model="commandForm.target" placeholder="Telegram 频道或群组链接" />
               <el-button type="primary" @click="queueAddTarget">提交</el-button>
             </div>
@@ -271,6 +279,29 @@
       <template #footer>
         <el-button @click="ruleDialog = false">取消</el-button>
         <el-button type="primary" @click="saveRule">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="sourceDialog" title="添加搬运源" width="560px">
+      <el-form label-width="110px">
+        <el-form-item label="自定义名称"><el-input v-model="addSourceForm.name" placeholder="例如：新闻源" /></el-form-item>
+        <el-form-item label="用户名/链接"><el-input v-model="addSourceForm.input" placeholder="@username、频道链接、消息链接或私有邀请链接" /></el-form-item>
+        <el-form-item label="自动加入"><el-switch v-model="addSourceForm.join" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="sourceDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitAddSource">提交</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="targetDialog" title="添加接收目标" width="560px">
+      <el-form label-width="110px">
+        <el-form-item label="自定义名称"><el-input v-model="addTargetForm.name" placeholder="例如：接收群" /></el-form-item>
+        <el-form-item label="用户名/链接"><el-input v-model="addTargetForm.input" placeholder="Telegram 频道或群组链接" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="targetDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitAddTarget">提交</el-button>
       </template>
     </el-dialog>
 
@@ -349,9 +380,13 @@ const auditLogs = ref([])
 const loginHistory = ref([])
 const webUsers = ref([])
 const userDialog = ref(false)
+const sourceDialog = ref(false)
+const targetDialog = ref(false)
+const addSourceForm = ref({ name: '', input: '', join: false })
+const addTargetForm = ref({ name: '', input: '' })
 const userForm = ref({ username: '', password: '', role: 'viewer' })
 const passwordForm = ref({ current: '', next: '', confirm: '' })
-const commandForm = ref({ source: '', target: '', join: false, syncSource: 'all', syncLimit: 100 })
+const commandForm = ref({ sourceName: '', source: '', targetName: '', target: '', join: false, syncSource: 'all', syncLimit: 100 })
 const ruleDialog = ref(false)
 const ruleForm = ref({})
 let chart = null
@@ -505,17 +540,19 @@ async function saveRule() {
 
 async function queueAddSource() {
   if (!commandForm.value.source) return ElMessage.warning('请输入源链接')
-  await enqueueAddSource(commandForm.value.source, commandForm.value.join)
+  await enqueueAddSource(commandForm.value.sourceName, commandForm.value.source, commandForm.value.join)
   ElMessage.success('添加源命令已进入队列')
   commandForm.value.source = ''
+  commandForm.value.sourceName = ''
   await refreshAll()
 }
 
 async function queueAddTarget() {
   if (!commandForm.value.target) return ElMessage.warning('请输入目标链接')
-  await enqueueAddTarget(commandForm.value.target)
+  await enqueueAddTarget(commandForm.value.targetName, commandForm.value.target)
   ElMessage.success('添加目标命令已进入队列')
   commandForm.value.target = ''
+  commandForm.value.targetName = ''
   await refreshAll()
 }
 
@@ -575,6 +612,24 @@ async function logoutAllAction() {
   logout(false)
 }
 
+async function submitAddSource() {
+  if (!addSourceForm.value.input) return ElMessage.warning('请输入用户名或链接')
+  await enqueueAddSource(addSourceForm.value.name, addSourceForm.value.input, addSourceForm.value.join)
+  ElMessage.success('添加源命令已提交，后台将按顺序处理')
+  sourceDialog.value = false
+  addSourceForm.value = { name: '', input: '', join: false }
+  setTimeout(refreshAll, 1500)
+}
+
+async function submitAddTarget() {
+  if (!addTargetForm.value.input) return ElMessage.warning('请输入用户名或链接')
+  await enqueueAddTarget(addTargetForm.value.name, addTargetForm.value.input)
+  ElMessage.success('添加目标命令已提交，后台将按顺序处理')
+  targetDialog.value = false
+  addTargetForm.value = { name: '', input: '' }
+  setTimeout(refreshAll, 1500)
+}
+
 async function saveUser() {
   if (!userForm.value.username || !userForm.value.password) return ElMessage.warning('请填写用户名和密码')
   await createUser(userForm.value)
@@ -603,4 +658,3 @@ onMounted(() => {
   if (authenticated.value) refreshAll()
 })
 </script>
-

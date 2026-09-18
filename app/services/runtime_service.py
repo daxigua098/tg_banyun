@@ -320,6 +320,7 @@ class RuntimeService:
                         self.client,
                         str(payload.get("input", "")),
                         join=bool(payload.get("join", False)),
+                        display_name=str(payload.get("name") or "") or None,
                     )
             return {"source_id": source.id, "title": source.title}
         if command.command_type == COMMAND_ADD_TARGET:
@@ -329,6 +330,7 @@ class RuntimeService:
                         session,
                         self.client,
                         str(payload.get("input", "")),
+                        display_name=str(payload.get("name") or "") or None,
                     )
             return {"target_id": target.id, "title": target.title}
         if command.command_type == COMMAND_NOTIFY_ADMINS:

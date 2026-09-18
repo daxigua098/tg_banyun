@@ -60,6 +60,7 @@ async def add_source(
     raw_input: str,
     *,
     join: bool = False,
+    display_name: str | None = None,
 ) -> Source:
     """Resolve and persist one Telegram source."""
     resolved = resolve_chat_input(raw_input)
@@ -81,6 +82,7 @@ async def add_source(
         tg_id=tg_id,
         username=username,
         title=title or str(tg_id),
+        display_name=display_name,
         is_private=is_private,
         join_status="joined",
         sync_status="pending",
@@ -110,6 +112,8 @@ async def add_target(
     session: AsyncSession,
     client: TelegramClient,
     raw_input: str,
+    *,
+    display_name: str | None = None,
 ) -> Target:
     """Resolve and persist one Telegram target."""
     resolved = resolve_chat_input(raw_input)
@@ -136,6 +140,7 @@ async def add_target(
         tg_id=tg_id,
         username=username,
         title=title or str(tg_id),
+        display_name=display_name,
     )
     session.add(target)
     await session.commit()

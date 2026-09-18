@@ -82,11 +82,13 @@ class LoginRequest(BaseModel):
 
 
 class AddSourceCommand(BaseModel):
+    name: str = ""
     input: str
     join: bool = False
 
 
 class AddTargetCommand(BaseModel):
+    name: str = ""
     input: str
 
 
@@ -371,6 +373,7 @@ def create_app() -> FastAPI:
             {
                 "id": item.id,
                 "title": item.title,
+                "display_name": item.display_name,
                 "username": item.username,
                 "enabled": item.enabled,
                 "sync_status": item.sync_status,
@@ -387,6 +390,7 @@ def create_app() -> FastAPI:
             {
                 "id": item.id,
                 "title": item.title,
+                "display_name": item.display_name,
                 "username": item.username,
                 "enabled": item.enabled,
             }
@@ -572,7 +576,7 @@ def create_app() -> FastAPI:
         command = await enqueue_control_command(
             session,
             COMMAND_ADD_SOURCE,
-            {"input": payload.input, "join": payload.join},
+            {"name": payload.name, "input": payload.input, "join": payload.join},
         )
         return {"id": command.id, "status": command.status}
 
@@ -584,7 +588,7 @@ def create_app() -> FastAPI:
         command = await enqueue_control_command(
             session,
             COMMAND_ADD_TARGET,
-            {"input": payload.input},
+            {"name": payload.name, "input": payload.input},
         )
         return {"id": command.id, "status": command.status}
 

@@ -54,6 +54,7 @@ class Source(TimestampMixin, Base):
     )
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_private: Mapped[bool] = mapped_column(Boolean, default=False)
     join_status: Mapped[str] = mapped_column(String(32), default="joined")
     sync_status: Mapped[str] = mapped_column(String(32), default="pending")
@@ -88,6 +89,7 @@ class Target(TimestampMixin, Base):
     )
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     routes: Mapped[list[Route]] = relationship(
