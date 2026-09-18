@@ -30,6 +30,10 @@ from app.services.control_command_service import (
     enqueue_control_command,
     list_control_commands,
 )
+from app.services.login_history_service import (
+    list_login_history,
+    record_login_attempt,
+)
 from app.services.rule_service import (
     list_source_rules,
     load_keywords,
@@ -242,7 +246,22 @@ def create_app() -> FastAPI:
                 role = user.role
                 valid = True
         if not valid:
+            await record_login_attempt(
+                session,
+                username=payload.username,
+                ip_address=request.client.host if request.client else None,
+                user_agent=request.headers.get("user-agent"),
+                success=False,
+                reason="用户名或密码错误",
+            )
             raise HTTPException(status_code=401, detail="用户名或密码错误")
+        await record_login_attempt(
+            session,
+            username=username,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            success=True,
+        )
         token, expires_at = create_session_token(web, username, role=role)
         await create_web_session(
             session,
@@ -645,6 +664,25 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="用户不存在")
         count = await revoke_all_web_sessions(session, user.username)
         return {"username": user.username, "revoked": count}
+
+    @app.get("/api/login-history", dependencies=[Depends(require_auth)])
+    async def login_history(
+        limit: int = Query(default=100, ge=1, le=500),
+        session: AsyncSession = Depends(session_dependency),
+    ) -> list[dict[str, Any]]:
+        rows = await list_login_history(session, limit=limit)
+        return [
+            {
+                "id": item.id,
+                "username": item.username,
+                "ip_address": item.ip_address,
+                "user_agent": item.user_agent,
+                "success": item.success,
+                "reason": item.reason,
+                "created_at": item.created_at,
+            }
+            for item in rows
+        ]
 
     @app.get("/api/audit", dependencies=[Depends(require_auth)])
     async def audit_logs(

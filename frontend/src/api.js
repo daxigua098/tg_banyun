@@ -57,3 +57,6 @@ export const updateUser = (id, payload) =>
   api.patch(`/api/users/${id}`, payload).then((response) => response.data)
 
 export const logoutSession = () => api.post('/api/auth/logout').then((response) => response.data)
+
+export const getLoginHistory = (limit = 100) =>
+  api.get('/api/login-history', { params: { limit } }).then((response) => response.data)

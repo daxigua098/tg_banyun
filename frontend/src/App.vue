@@ -24,6 +24,7 @@
         <el-menu-item index="jobs">投递任务</el-menu-item>
         <el-menu-item index="commands">控制命令</el-menu-item>
         <el-menu-item index="audit">操作日志</el-menu-item>
+        <el-menu-item index="login_history">登录历史</el-menu-item>
         <el-menu-item v-if="userRole === 'super_admin'" index="users">用户管理</el-menu-item>
       </el-menu>
     </el-aside>
@@ -141,6 +142,21 @@
             <el-table-column label="状态" width="100">
               <template #default="{ row }"><el-switch v-model="row.enabled" @change="changeUserEnabled(row)" /></template>
             </el-table-column>
+          </el-table>
+        </el-card>
+
+        <el-card v-else-if="activePage === 'login_history'">
+          <template #header>最近登录记录</template>
+          <el-table :data="loginHistory" stripe>
+            <el-table-column prop="id" label="ID" width="80" />
+            <el-table-column prop="username" label="用户名" width="160" />
+            <el-table-column label="结果" width="100">
+              <template #default="{ row }"><el-tag :type="row.success ? 'success' : 'danger'">{{ row.success ? '成功' : '失败' }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="ip_address" label="IP" width="150" />
+            <el-table-column prop="reason" label="原因" min-width="140" />
+            <el-table-column prop="user_agent" label="客户端" min-width="240" show-overflow-tooltip />
+            <el-table-column prop="created_at" label="时间" min-width="180" />
           </el-table>
         </el-card>
 
@@ -275,6 +291,7 @@ import {
   enqueueSync,
   createUser,
   getControlCommands,
+  getLoginHistory,
   getUsers,
   getJobs,
   getRoutes,
@@ -307,6 +324,7 @@ const chartElement = ref(null)
 const newRoute = ref({ source_id: null, target_id: null })
 const commands = ref([])
 const auditLogs = ref([])
+const loginHistory = ref([])
 const webUsers = ref([])
 const userDialog = ref(false)
 const userForm = ref({ username: '', password: '', role: 'viewer' })
@@ -354,6 +372,7 @@ async function refreshAll() {
     rules.value = ruleData
     commands.value = commandData
     auditLogs.value = authenticated.value ? await getAuditLogs() : []
+    loginHistory.value = authenticated.value ? await getLoginHistory() : []
     webUsers.value = authenticated.value && userRole.value === 'super_admin' ? await getUsers() : []
     await loadJobs()
     lastRefresh.value = new Date().toLocaleString()
@@ -543,4 +562,3 @@ onMounted(() => {
   if (authenticated.value) refreshAll()
 })
 </script>
-
