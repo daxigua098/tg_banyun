@@ -374,10 +374,23 @@ class RuntimeService:
         if command.command_type == COMMAND_SYNC:
             source_value = payload.get("source_id", "all")
             limit = int(payload.get("limit") or self.config.history.default_limit)
+            raw_keywords = payload.get("keywords")
+            fuzzy_keywords = (
+                [str(item).strip() for item in raw_keywords if str(item).strip()]
+                if isinstance(raw_keywords, list)
+                else []
+            )
             if source_value == "all":
-                results = await self.history.sync_all(limit=limit)
+                results = await self.history.sync_all(
+                    limit=limit,
+                    fuzzy_keywords=fuzzy_keywords or None,
+                )
                 return {"results": results}
-            inspected = await self.history.sync_source(int(source_value), limit=limit)
+            inspected = await self.history.sync_source(
+                int(source_value),
+                limit=limit,
+                fuzzy_keywords=fuzzy_keywords or None,
+            )
             if not is_runtime_paused(self.control_path):
                 await self.transfer.process_pending()
             return {"source_id": int(source_value), "inspected": inspected}
