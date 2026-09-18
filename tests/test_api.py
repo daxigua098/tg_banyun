@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from app.api import main as api_main
-from app.api.main import create_app
+from app.api.main import calculate_progress_percent, create_app
 from app.config import load_config
 
 
@@ -170,3 +170,10 @@ def test_control_commands_include_delivery_progress(monkeypatch) -> None:
         "pending": 0,
         "percent": 100,
     }
+
+
+def test_sync_progress_uses_completed_jobs_not_command_status() -> None:
+    assert calculate_progress_percent(total=130, completed=1) == 0
+    assert calculate_progress_percent(total=130, completed=65) == 50
+    assert calculate_progress_percent(total=130, completed=130) == 100
+    assert calculate_progress_percent(total=0, completed=0) == 100

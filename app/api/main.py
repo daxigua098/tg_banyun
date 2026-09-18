@@ -183,6 +183,11 @@ class WebUserUpdate(BaseModel):
     password: str | None = None
 
 
+def calculate_progress_percent(total: int, completed: int) -> int:
+    """Return an accurate percentage for long-running control commands."""
+    return 100 if total == 0 else min(100, int(completed * 100 / total))
+
+
 def create_app() -> FastAPI:
     """Create the FastAPI application."""
     app = FastAPI(
@@ -932,9 +937,7 @@ def create_app() -> FastAPI:
                 pending = 1
 
         completed = success + failed
-        percent = 100 if total == 0 else min(100, int(completed * 100 / total))
-        if item.status == "success":
-            percent = 100
+        percent = calculate_progress_percent(total, completed)
         return {
             "id": item.id,
             "command_type": item.command_type,
