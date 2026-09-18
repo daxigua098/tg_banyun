@@ -334,29 +334,38 @@
         <el-card v-else-if="activePage === 'queue'">
           <template #header>
             <div class="filters">
-              <span>任务每 2 秒自动刷新</span>
+              <span>每次点击只创建 1 条任务；这里统计实际投递进度，每 2 秒自动刷新</span>
               <el-button @click="loadQueueCommands">立即刷新</el-button>
             </div>
           </template>
           <el-table :data="commands" stripe>
             <el-table-column prop="id" label="任务 ID" width="90" />
-            <el-table-column prop="command_type" label="类型" width="150" />
+            <el-table-column label="类型" width="150">
+              <template #default="{ row }">{{ commandTypeLabel(row.command_type) }}</template>
+            </el-table-column>
             <el-table-column label="状态" width="110">
               <template #default="{ row }">
-                <el-tag :type="row.status === 'success' ? 'success' : row.status === 'failed' ? 'danger' : 'warning'">{{ row.status }}</el-tag>
+                <el-tag :type="row.status === 'success' ? 'success' : row.status === 'failed' ? 'danger' : 'warning'">
+                  {{ commandStatusLabel(row.status) }}
+                </el-tag>
               </template>
             </el-table-column>
             <el-table-column label="进度" min-width="260">
               <template #default="{ row }">
                 <el-progress :percentage="row.progress?.percent || 0" />
-                <div class="queue-detail">
+                <div class="queue-detail" v-if="row.progress?.total">
                   完成 {{ row.progress?.completed || 0 }} / {{ row.progress?.total || 0 }}
                   ，成功 {{ row.progress?.success || 0 }}
                   ，失败 {{ row.progress?.failed || 0 }}
                 </div>
+                <div class="queue-detail" v-else>
+                  {{ row.status === 'success' ? '没有新增投递任务' : '等待统计投递任务' }}
+                </div>
               </template>
             </el-table-column>
-            <el-table-column prop="result" label="结果" min-width="180" show-overflow-tooltip />
+            <el-table-column label="结果" min-width="260" show-overflow-tooltip>
+              <template #default="{ row }">{{ commandResultLabel(row) }}</template>
+            </el-table-column>
             <el-table-column prop="error" label="错误" min-width="180" show-overflow-tooltip />
           </el-table>
         </el-card>
@@ -452,7 +461,7 @@
         <el-form-item label="搬运数量"><el-input-number v-model="syncForm.limit" :min="1" :max="5000" /></el-form-item>
         <el-form-item label="关键词筛选">
           <el-input v-model="syncForm.keywordsText" placeholder="可选，多个关键词用逗号分隔，例如：AI,主播,少女" />
-          <div class="upload-hint">模糊匹配帖子文字或说明，命中任意一个关键词才搬运；留空则搬运全部。</div>
+          <div class="upload-hint">从最近历史开始查找，最多加入指定数量的未搬运图文/视频帖子；已搬过的自动跳过。关键词留空表示不筛选。</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -650,6 +659,47 @@ async function refreshAll() {
   } finally {
     loading.value = false
   }
+}
+
+const commandTypeLabels = {
+  sync: '历史搬运',
+  add_source: '添加搬运源',
+  add_target: '添加接收目标',
+  manual_post: '手动群发',
+  notify_admins: '管理员通知',
+}
+
+const commandStatusLabels = {
+  pending: '等待中',
+  processing: '执行中',
+  success: '已完成',
+  failed: '失败',
+}
+
+function commandTypeLabel(value) {
+  return commandTypeLabels[value] || value
+}
+
+function commandStatusLabel(value) {
+  return commandStatusLabels[value] || value
+}
+
+function commandResultLabel(row) {
+  if (row.error) return row.error
+  if (row.command_type !== 'sync') return row.result || '-'
+  if (['pending', 'processing'].includes(row.status)) return '后台正在扫描历史消息'
+  let result = {}
+  try {
+    result = row.result ? JSON.parse(row.result) : {}
+  } catch {
+    return row.result || '-'
+  }
+  const enqueued = Number(result.inspected ?? result.enqueued ?? 0)
+  if (row.status === 'success' && enqueued === 0) {
+    return '扫描完成：没有新的可搬运帖子（可能已搬过、不是图文视频，或不符合关键词）'
+  }
+  if (row.status === 'success') return `已加入 ${enqueued} 条未搬运帖子`
+  return row.result || '-'
 }
 
 async function loadQueueCommands() {

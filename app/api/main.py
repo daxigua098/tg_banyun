@@ -151,6 +151,7 @@ class SyncCommand(BaseModel):
     source_id: int | str
     limit: int = Field(default=100, ge=1, le=5000)
     keywords: list[str] = Field(default_factory=list)
+    recent: bool = True
 
 
 class RuleUpdate(BaseModel):
@@ -768,6 +769,7 @@ def create_app() -> FastAPI:
                 "source_id": source_value,
                 "limit": payload.limit,
                 "keywords": payload.keywords,
+                "recent": payload.recent,
             },
         )
         return {"id": command.id, "status": command.status}
@@ -957,18 +959,7 @@ def create_app() -> FastAPI:
         session: AsyncSession = Depends(session_dependency),
     ) -> list[dict[str, Any]]:
         rows = await list_control_commands(session, limit=limit)
-        return [
-            {
-                "id": item.id,
-                "command_type": item.command_type,
-                "status": item.status,
-                "result": item.result,
-                "error": item.error,
-                "created_at": item.created_at,
-                "processed_at": item.processed_at,
-            }
-            for item in rows
-        ]
+        return [await serialize_control_command(session, item) for item in rows]
 
     @app.post("/api/retry-failed", dependencies=[Depends(require_auth)])
     async def retry_failed(

@@ -380,16 +380,19 @@ class RuntimeService:
                 if isinstance(raw_keywords, list)
                 else []
             )
+            recent = bool(payload.get("recent", True))
             if source_value == "all":
                 results = await self.history.sync_all(
                     limit=limit,
                     fuzzy_keywords=fuzzy_keywords or None,
+                    recent=recent,
                 )
                 return {"results": results}
             inspected = await self.history.sync_source(
                 int(source_value),
                 limit=limit,
                 fuzzy_keywords=fuzzy_keywords or None,
+                recent=recent,
             )
             return {"source_id": int(source_value), "inspected": inspected}
         raise ValueError(f"不支持的控制命令：{command.command_type}")

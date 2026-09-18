@@ -268,3 +268,85 @@ async def test_history_fuzzy_keyword_filter() -> None:
     assert inspected == 2
     assert transfer.enqueued == [(1, (20,)), (1, (22,))]
     await engine.dispose()
+
+
+class FakeRecentHistoryClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def iter_messages(self, entity: object, **kwargs: object):
+        self.calls.append(kwargs)
+        yield SimpleNamespace(
+            id=30,
+            action=None,
+            pinned=False,
+            photo=object(),
+            video=None,
+            media=None,
+            grouped_id=None,
+        )
+        yield SimpleNamespace(
+            id=20,
+            action=None,
+            pinned=False,
+            photo=object(),
+            video=None,
+            media=None,
+            grouped_id=None,
+        )
+        yield SimpleNamespace(
+            id=10,
+            action=None,
+            pinned=False,
+            photo=object(),
+            video=None,
+            media=None,
+            grouped_id=None,
+        )
+
+
+class FakeRecentTransfer:
+    def __init__(self, new_message_ids: set[int]) -> None:
+        self.new_message_ids = new_message_ids
+        self.enqueued: list[tuple[int, tuple[int, ...]]] = []
+
+    async def enqueue_batch(self, source_id: int, batch: object) -> list[int]:
+        self.enqueued.append((source_id, batch.message_ids))
+        if batch.primary_message_id not in self.new_message_ids:
+            return []
+        return [len(self.enqueued)]
+
+
+async def test_history_recent_mode_scans_past_watermark_and_skips_duplicates() -> None:
+    session_factory, engine = await _build_factory()
+    config = AppConfig(
+        history=HistoryConfig(default_limit=2, skip_pinned=True),
+        transfer=TransferConfig(delay_seconds=0),
+    )
+    client = FakeRecentHistoryClient()
+    transfer = FakeRecentTransfer({20})
+
+    async with session_factory() as session:
+        session.add(
+            Source(
+                raw_input="@recent_source",
+                normalized_key="username:recent_source",
+                tg_id=104,
+                title="Recent Source",
+                last_synced_message_id=30,
+            )
+        )
+        await session.commit()
+
+    service = HistorySyncService(
+        client,  # type: ignore[arg-type]
+        session_factory,
+        transfer,  # type: ignore[arg-type]
+        config,
+    )
+    enqueued = await service.sync_source(1, limit=2, recent=True)
+
+    assert enqueued == 1
+    assert client.calls == [{"limit": 5000}]
+    assert transfer.enqueued == [(1, (20,)), (1, (30,))]
+    await engine.dispose()

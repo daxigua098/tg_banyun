@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from app.api import main as api_main
@@ -127,4 +130,43 @@ def test_sync_command_includes_fuzzy_keywords(monkeypatch) -> None:
         "source_id": 1,
         "limit": 30,
         "keywords": ["AI", "主播"],
+        "recent": True,
+    }
+
+def test_control_commands_include_delivery_progress(monkeypatch) -> None:
+    config = load_config()
+    config.web.api_token = ""
+    config.web.admin_password = ""
+    config.web.session_secret = ""
+    monkeypatch.setattr(api_main, "load_config", lambda: config)
+
+    command = SimpleNamespace(
+        id=55,
+        command_type="sync",
+        status="success",
+        payload='{"source_id": 999}',
+        result='{"source_id": 999, "inspected": 0}',
+        error=None,
+        created_at=datetime.now(UTC),
+        processed_at=datetime.now(UTC),
+    )
+
+    async def fake_list_control_commands(session, limit=50):
+        return [command]
+
+    monkeypatch.setattr(api_main, "list_control_commands", fake_list_control_commands)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/control/commands")
+
+    assert response.status_code == 200
+    item = response.json()[0]
+    assert item["id"] == 55
+    assert item["progress"] == {
+        "total": 0,
+        "completed": 0,
+        "success": 0,
+        "failed": 0,
+        "pending": 0,
+        "percent": 100,
     }

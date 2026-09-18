@@ -28,10 +28,12 @@ async def test_runtime_sync_command_passes_fuzzy_keywords() -> None:
             *,
             limit: int,
             fuzzy_keywords: list[str] | None = None,
+            recent: bool = False,
         ) -> int:
             captured["source_id"] = source_id
             captured["limit"] = limit
             captured["fuzzy_keywords"] = fuzzy_keywords
+            captured["recent"] = recent
             return 7
 
     class FakeTransfer:
@@ -57,4 +59,5 @@ async def test_runtime_sync_command_passes_fuzzy_keywords() -> None:
         "source_id": 5,
         "limit": 30,
         "fuzzy_keywords": ["AI", "主播"],
+        "recent": True,
     }
