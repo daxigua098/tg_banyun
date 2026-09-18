@@ -60,3 +60,11 @@ export const logoutSession = () => api.post('/api/auth/logout').then((response) 
 
 export const getLoginHistory = (limit = 100) =>
   api.get('/api/login-history', { params: { limit } }).then((response) => response.data)
+
+export const changePassword = (currentPassword, newPassword) =>
+  api.patch('/api/auth/password', {
+    current_password: currentPassword,
+    new_password: newPassword,
+  }).then((response) => response.data)
+export const logoutAllSessions = () =>
+  api.post('/api/auth/logout-all').then((response) => response.data)

@@ -26,6 +26,7 @@
         <el-menu-item index="audit">操作日志</el-menu-item>
         <el-menu-item index="login_history">登录历史</el-menu-item>
         <el-menu-item v-if="userRole === 'super_admin'" index="users">用户管理</el-menu-item>
+        <el-menu-item index="account">账号安全</el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -124,6 +125,23 @@
             </el-table-column>
           </el-table>
         </el-card>
+
+        <section v-else-if="activePage === 'account'">
+          <el-card class="command-card">
+            <template #header>修改密码</template>
+            <el-form label-width="120px">
+              <el-form-item label="当前密码"><el-input v-model="passwordForm.current" type="password" show-password /></el-form-item>
+              <el-form-item label="新密码"><el-input v-model="passwordForm.next" type="password" show-password /></el-form-item>
+              <el-form-item label="确认新密码"><el-input v-model="passwordForm.confirm" type="password" show-password /></el-form-item>
+              <el-form-item><el-button type="primary" @click="changePasswordAction">保存密码</el-button></el-form-item>
+            </el-form>
+          </el-card>
+          <el-card>
+            <template #header>会话安全</template>
+            <p>强制退出当前账号在其他设备上的全部会话。</p>
+            <el-button type="danger" plain @click="logoutAllAction">全部设备下线</el-button>
+          </el-card>
+        </section>
 
         <el-card v-else-if="activePage === 'users'">
           <div class="filters"><el-button type="primary" @click="userDialog = true">新增用户</el-button></div>
@@ -281,9 +299,11 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import {
+  changePassword,
   checkAuth,
   createRoute,
   login as loginRequest,
+  logoutAllSessions,
   logoutSession,
   deleteRoute,
   enqueueAddSource,
@@ -328,6 +348,7 @@ const loginHistory = ref([])
 const webUsers = ref([])
 const userDialog = ref(false)
 const userForm = ref({ username: '', password: '', role: 'viewer' })
+const passwordForm = ref({ current: '', next: '', confirm: '' })
 const commandForm = ref({ source: '', target: '', join: false, syncSource: 'all', syncLimit: 100 })
 const ruleDialog = ref(false)
 const ruleForm = ref({})
@@ -532,6 +553,24 @@ function logout(showMessage = true) {
   localStorage.removeItem('admin_api_token')
   authenticated.value = false
   if (showMessage) ElMessage.success('已退出登录')
+}
+
+async function changePasswordAction() {
+  if (!passwordForm.value.current || !passwordForm.value.next) return ElMessage.warning('请填写密码')
+  if (passwordForm.value.next !== passwordForm.value.confirm) return ElMessage.warning('两次新密码不一致')
+  try {
+    await changePassword(passwordForm.value.current, passwordForm.value.next)
+    ElMessage.success('密码已修改，请重新登录')
+    logout(false)
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '密码修改失败')
+  }
+}
+
+async function logoutAllAction() {
+  const result = await logoutAllSessions()
+  ElMessage.success(`已撤销 ${result.revoked} 个会话`)
+  logout(false)
 }
 
 async function saveUser() {

@@ -318,6 +318,18 @@ def create_app() -> FastAPI:
         await update_web_user(session, user.id, password=payload.new_password)
         return {"changed": True}
 
+    @app.post("/api/auth/logout-all", dependencies=[Depends(require_auth)])
+    async def logout_all(
+        request: Request,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        identity = getattr(request.state, "identity", {})
+        username = str(identity.get("username") or "")
+        if not username or username == "api-token":
+            return {"username": username, "revoked": 0}
+        count = await revoke_all_web_sessions(session, username)
+        return {"username": username, "revoked": count}
+
     @app.get("/api/status", dependencies=[Depends(require_auth)])
     async def status(session: AsyncSession = Depends(session_dependency)) -> dict[str, Any]:
         config: AppConfig = app.state.config
