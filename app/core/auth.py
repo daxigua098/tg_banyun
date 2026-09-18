@@ -6,17 +6,44 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import time
 from typing import Any
 
 from app.config import WebConfig
 
 
-def create_session_token(config: WebConfig, username: str) -> tuple[str, int]:
+def hash_password(password: str) -> str:
+    """Hash a password using PBKDF2-HMAC-SHA256."""
+    salt = os.urandom(16)
+    iterations = 240_000
+    digest = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, iterations)
+    return f'pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}'
+
+
+def verify_password(password: str, encoded: str) -> bool:
+    """Verify a PBKDF2 password hash."""
+    try:
+        algorithm, iterations_text, salt_hex, digest_hex = encoded.split('$', 3)
+        if algorithm != 'pbkdf2_sha256':
+            return False
+        expected = bytes.fromhex(digest_hex)
+        actual = hashlib.pbkdf2_hmac(
+            'sha256',
+            password.encode('utf-8'),
+            bytes.fromhex(salt_hex),
+            int(iterations_text),
+        )
+    except (ValueError, TypeError):
+        return False
+    return hmac.compare_digest(actual, expected)
+
+
+def create_session_token(config: WebConfig, username: str, role: str = 'admin') -> tuple[str, int]:
     """Create a signed expiring session token."""
     expires_at = int(time.time()) + config.session_hours * 3600
     payload = json.dumps(
-        {"sub": username, "exp": expires_at},
+        {"sub": username, "role": role, "exp": expires_at},
         separators=(",", ":"),
     ).encode("utf-8")
     encoded = base64.urlsafe_b64encode(payload).rstrip(b"=")

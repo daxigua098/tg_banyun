@@ -50,3 +50,8 @@ export const login = (username, password) => api.post('/api/auth/login', { usern
 
 export const getAuditLogs = (limit = 100) =>
   api.get('/api/audit', { params: { limit } }).then((response) => response.data)
+
+export const getUsers = () => api.get('/api/users').then((response) => response.data)
+export const createUser = (payload) => api.post('/api/users', payload).then((response) => response.data)
+export const updateUser = (id, payload) =>
+  api.patch(`/api/users/${id}`, payload).then((response) => response.data)

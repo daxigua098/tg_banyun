@@ -24,6 +24,7 @@
         <el-menu-item index="jobs">投递任务</el-menu-item>
         <el-menu-item index="commands">控制命令</el-menu-item>
         <el-menu-item index="audit">操作日志</el-menu-item>
+        <el-menu-item v-if="userRole === 'super_admin'" index="users">用户管理</el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -123,6 +124,26 @@
           </el-table>
         </el-card>
 
+        <el-card v-else-if="activePage === 'users'">
+          <div class="filters"><el-button type="primary" @click="userDialog = true">新增用户</el-button></div>
+          <el-table :data="webUsers" stripe>
+            <el-table-column prop="id" label="ID" width="70" />
+            <el-table-column prop="username" label="用户名" min-width="160" />
+            <el-table-column label="角色" width="160">
+              <template #default="{ row }">
+                <el-select v-model="row.role" @change="changeUserRole(row)">
+                  <el-option label="超级管理员" value="super_admin" />
+                  <el-option label="操作员" value="operator" />
+                  <el-option label="只读用户" value="viewer" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }"><el-switch v-model="row.enabled" @change="changeUserEnabled(row)" /></template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+
         <el-card v-else-if="activePage === 'audit'">
           <template #header>最近操作日志</template>
           <el-table :data="auditLogs" stripe>
@@ -218,6 +239,24 @@
         <el-button type="primary" @click="saveRule">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="userDialog" title="新增用户" width="480px">
+      <el-form label-width="90px">
+        <el-form-item label="用户名"><el-input v-model="userForm.username" /></el-form-item>
+        <el-form-item label="密码"><el-input v-model="userForm.password" type="password" show-password /></el-form-item>
+        <el-form-item label="角色">
+          <el-select v-model="userForm.role">
+            <el-option label="超级管理员" value="super_admin" />
+            <el-option label="操作员" value="operator" />
+            <el-option label="只读用户" value="viewer" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="userDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveUser">保存</el-button>
+      </template>
+    </el-dialog>
   </el-container>
 </template>
 
@@ -233,7 +272,9 @@ import {
   enqueueAddSource,
   enqueueAddTarget,
   enqueueSync,
+  createUser,
   getControlCommands,
+  getUsers,
   getJobs,
   getRoutes,
   getRules,
@@ -245,6 +286,7 @@ import {
   retryFailed,
   setSourceEnabled,
   setTargetEnabled,
+  updateUser,
   updateRule,
 } from './api'
 
@@ -264,6 +306,9 @@ const chartElement = ref(null)
 const newRoute = ref({ source_id: null, target_id: null })
 const commands = ref([])
 const auditLogs = ref([])
+const webUsers = ref([])
+const userDialog = ref(false)
+const userForm = ref({ username: '', password: '', role: 'viewer' })
 const commandForm = ref({ source: '', target: '', join: false, syncSource: 'all', syncLimit: 100 })
 const ruleDialog = ref(false)
 const ruleForm = ref({})
@@ -308,6 +353,7 @@ async function refreshAll() {
     rules.value = ruleData
     commands.value = commandData
     auditLogs.value = authenticated.value ? await getAuditLogs() : []
+    webUsers.value = authenticated.value && userRole.value === 'super_admin' ? await getUsers() : []
     await loadJobs()
     lastRefresh.value = new Date().toLocaleString()
     await nextTick()
@@ -444,12 +490,16 @@ async function login() {
   try {
     const result = await loginRequest(loginForm.value.username, loginForm.value.password)
     localStorage.setItem('admin_session_token', result.token)
+    localStorage.setItem('admin_user_role', result.role || 'viewer')
+    userRole.value = result.role || 'viewer'
     localStorage.removeItem('admin_api_token')
     authenticated.value = true
     loginForm.value.password = ''
     await refreshAll()
   } catch (error) {
     localStorage.removeItem('admin_session_token')
+  localStorage.removeItem('admin_user_role')
+  userRole.value = ''
     authenticated.value = false
     ElMessage.error(error.response?.data?.detail || '登录失败')
   }
@@ -457,9 +507,30 @@ async function login() {
 
 function logout(showMessage = true) {
   localStorage.removeItem('admin_session_token')
+  localStorage.removeItem('admin_user_role')
+  userRole.value = ''
   localStorage.removeItem('admin_api_token')
   authenticated.value = false
   if (showMessage) ElMessage.success('已退出登录')
+}
+
+async function saveUser() {
+  if (!userForm.value.username || !userForm.value.password) return ElMessage.warning('请填写用户名和密码')
+  await createUser(userForm.value)
+  ElMessage.success('用户已创建')
+  userDialog.value = false
+  userForm.value = { username: '', password: '', role: 'viewer' }
+  await refreshAll()
+}
+
+async function changeUserRole(row) {
+  await updateUser(row.id, { role: row.role })
+  ElMessage.success('角色已更新')
+}
+
+async function changeUserEnabled(row) {
+  await updateUser(row.id, { enabled: row.enabled })
+  ElMessage.success('用户状态已更新')
 }
 
 function selectPage(index) {

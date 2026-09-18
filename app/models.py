@@ -233,3 +233,14 @@ class AuditLog(Base):
     status_code: Mapped[int] = mapped_column(Integer)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+class WebUser(TimestampMixin, Base):
+    """Web management user with a role."""
+
+    __tablename__ = "web_users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(512))
+    role: Mapped[str] = mapped_column(String(32), default="viewer", index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)

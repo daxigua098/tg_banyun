@@ -72,3 +72,21 @@ def test_api_username_password_login(monkeypatch) -> None:
 
     assert login.status_code == 200
     assert check.status_code == 200
+
+def test_viewer_role_cannot_execute_write_actions(monkeypatch) -> None:
+    from app.core.auth import create_session_token
+
+    config = load_config()
+    config.web.api_token = ''
+    config.web.admin_password = ''
+    config.web.session_secret = 'session-secret'
+    monkeypatch.setattr(api_main, 'load_config', lambda: config)
+    token, _ = create_session_token(config.web, 'viewer1', role='viewer')
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            '/api/pause',
+            headers={'Authorization': f'Bearer {token}'},
+        )
+
+    assert response.status_code == 403

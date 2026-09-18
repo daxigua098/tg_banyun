@@ -10,6 +10,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -34,6 +35,13 @@ from app.services.rule_service import (
     load_keywords,
     load_sender_ids,
     replace_source_rule,
+)
+from app.services.user_service import (
+    authenticate_web_user,
+    create_web_user,
+    get_web_user_by_username,
+    list_web_users,
+    update_web_user,
 )
 
 
@@ -88,6 +96,18 @@ class RuleUpdate(BaseModel):
     sender_blacklist: list[int] = Field(default_factory=list)
 
 
+class WebUserCreate(BaseModel):
+    username: str
+    password: str
+    role: str = "viewer"
+
+
+class WebUserUpdate(BaseModel):
+    role: str | None = None
+    enabled: bool | None = None
+    password: str | None = None
+
+
 def create_app() -> FastAPI:
     """Create the FastAPI application."""
     app = FastAPI(
@@ -104,21 +124,32 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    def authenticated_username(request: Request) -> str:
+    def authenticated_identity(request: Request) -> dict[str, str] | None:
         authorization = request.headers.get("authorization", "")
-        supplied = (
-            authorization.removeprefix("Bearer ").strip()
-            if authorization
-            else ""
-        )
+        supplied = authorization.removeprefix("Bearer ").strip() if authorization else ""
         web = request.app.state.config.web
         if web.api_token and hmac.compare_digest(supplied, web.api_token):
-            return "api-token"
+            return {"username": "api-token", "role": "super_admin"}
         payload = verify_session_token(web, supplied) if supplied else None
-        return str(payload.get("sub")) if payload else "anonymous"
+        if not payload:
+            return None
+        return {
+            "username": str(payload.get("sub")),
+            "role": str(payload.get("role") or "viewer"),
+        }
+
+    def authenticated_username(request: Request) -> str:
+        identity = authenticated_identity(request)
+        return identity["username"] if identity else "anonymous"
 
     @app.middleware("http")
     async def audit_middleware(request: Request, call_next: Any) -> Any:
+        identity = authenticated_identity(request)
+        if identity is not None and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            if request.url.path.startswith("/api/") and identity["role"] == "viewer":
+                return JSONResponse(status_code=403, content={"detail": "只读用户无权执行此操作"})
+            if request.url.path.startswith("/api/users") and identity["role"] != "super_admin":
+                return JSONResponse(status_code=403, content={"detail": "仅超级管理员可管理用户"})
         response = await call_next(request)
         is_write = request.method in {"POST", "PUT", "PATCH", "DELETE"}
         if is_write and request.url.path.startswith("/api/"):
@@ -165,19 +196,37 @@ def create_app() -> FastAPI:
         return {"status": "ok", "time": datetime.now(UTC).isoformat(timespec="seconds")}
 
     @app.post("/api/auth/login")
-    async def login(payload: LoginRequest, request: Request) -> dict[str, Any]:
+    async def login(
+        payload: LoginRequest,
+        request: Request,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
         web = request.app.state.config.web
-        if not web.admin_password:
-            raise HTTPException(status_code=400, detail="管理员账号未配置")
-        valid_username = hmac.compare_digest(payload.username, web.admin_username)
-        valid_password = hmac.compare_digest(payload.password, web.admin_password)
-        if not valid_username or not valid_password:
+        username = web.admin_username
+        role = "super_admin"
+        valid = False
+        if web.admin_password:
+            valid = hmac.compare_digest(
+                payload.username,
+                web.admin_username,
+            ) and hmac.compare_digest(
+                payload.password,
+                web.admin_password,
+            )
+        if not valid:
+            user = await get_web_user_by_username(session, payload.username)
+            if user is not None and authenticate_web_user(user, payload.password):
+                username = user.username
+                role = user.role
+                valid = True
+        if not valid:
             raise HTTPException(status_code=401, detail="用户名或密码错误")
-        token, expires_at = create_session_token(web, web.admin_username)
+        token, expires_at = create_session_token(web, username, role=role)
         return {
             "token": token,
             "expires_at": expires_at,
-            "username": web.admin_username,
+            "username": username,
+            "role": role,
         }
 
     @app.get("/api/auth/check", dependencies=[Depends(require_auth)])
@@ -459,6 +508,66 @@ def create_app() -> FastAPI:
             {"source_id": source_value, "limit": payload.limit},
         )
         return {"id": command.id, "status": command.status}
+
+    @app.get("/api/users", dependencies=[Depends(require_auth)])
+    async def users(
+        session: AsyncSession = Depends(session_dependency),
+    ) -> list[dict[str, Any]]:
+        rows = await list_web_users(session)
+        return [
+            {
+                "id": item.id,
+                "username": item.username,
+                "role": item.role,
+                "enabled": item.enabled,
+                "created_at": item.created_at,
+            }
+            for item in rows
+        ]
+
+    @app.post("/api/users", dependencies=[Depends(require_auth)])
+    async def create_user(
+        payload: WebUserCreate,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        try:
+            user = await create_web_user(
+                session,
+                username=payload.username,
+                password=payload.password,
+                role=payload.role,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+            "enabled": user.enabled,
+        }
+
+    @app.patch("/api/users/{user_id}", dependencies=[Depends(require_auth)])
+    async def update_user(
+        user_id: int,
+        payload: WebUserUpdate,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        try:
+            user = await update_web_user(
+                session,
+                user_id,
+                role=payload.role,
+                enabled=payload.enabled,
+                password=payload.password,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+            "enabled": user.enabled,
+        }
 
     @app.get("/api/audit", dependencies=[Depends(require_auth)])
     async def audit_logs(
