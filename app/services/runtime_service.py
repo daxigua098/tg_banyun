@@ -14,6 +14,7 @@ from app.config import AppConfig
 from app.core.content_filter import should_transfer_message
 from app.core.heartbeat import HeartbeatWriter
 from app.core.message_batch import MessageBatch
+from app.core.runtime_control import is_runtime_paused
 from app.core.transfer import SequentialTransferService
 from app.models import Route, Source, Target
 from app.services.history_service import HistorySyncService
@@ -43,6 +44,7 @@ class RuntimeService:
         )
         self.queue: asyncio.Queue[tuple[int, MessageBatch] | None] = asyncio.Queue()
         self.heartbeat = HeartbeatWriter(config.project_root / "data" / "runtime_status.json")
+        self.control_path = config.project_root / "data" / "runtime_control.json"
         self._new_message_filter = events.NewMessage(
             incoming=True,
             func=self._is_non_album,
@@ -68,7 +70,8 @@ class RuntimeService:
         )
 
         try:
-            await self.transfer.process_pending()
+            if not is_runtime_paused(self.control_path):
+                await self.transfer.process_pending()
             await self._sync_history_sequentially()
 
             worker = asyncio.create_task(
@@ -117,6 +120,7 @@ class RuntimeService:
             target_count=target_count,
             route_count=route_count,
             queue_size=self.queue.qsize(),
+            paused=is_runtime_paused(self.control_path),
         )
 
     async def _sync_history_sequentially(self) -> None:
@@ -134,7 +138,8 @@ class RuntimeService:
 
         for source_id in source_ids:
             await self.history.sync_source(source_id)
-            await self.transfer.process_pending()
+            if not is_runtime_paused(self.control_path):
+                await self.transfer.process_pending()
 
     async def _on_new_message(self, event: events.NewMessage.Event) -> None:
         chat_id = event.chat_id
@@ -176,7 +181,8 @@ class RuntimeService:
             try:
                 item = await asyncio.wait_for(self.queue.get(), timeout=1.0)
             except TimeoutError:
-                await self.transfer.process_pending()
+                if not is_runtime_paused(self.control_path):
+                    await self.transfer.process_pending()
                 continue
 
             try:
@@ -192,7 +198,10 @@ class RuntimeService:
                             batch.max_message_id,
                         )
                         await session.commit()
-                await self.transfer.process_pending()
+                if not is_runtime_paused(self.control_path):
+                    await self.transfer.process_pending()
             finally:
                 self.queue.task_done()
+
+
 

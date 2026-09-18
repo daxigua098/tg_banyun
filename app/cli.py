@@ -21,6 +21,7 @@ from app.core.client import (
     start_management_bot_client,
 )
 from app.core.heartbeat import is_process_running, read_runtime_status
+from app.core.runtime_control import is_runtime_paused, set_runtime_paused
 from app.core.runtime_lock import RuntimeLock
 from app.core.transfer import SequentialTransferService
 from app.database import dispose_database, get_session_factory, init_database
@@ -381,6 +382,18 @@ async def command_bot(args: argparse.Namespace) -> None:
         await _with_client(config, run)
 
 
+async def command_pause(args: argparse.Namespace) -> None:
+    config = load_config(args.config)
+    set_runtime_paused(config.project_root / "data" / "runtime_control.json", True)
+    print("Runtime paused. New jobs will remain queued.")
+
+
+async def command_resume(args: argparse.Namespace) -> None:
+    config = load_config(args.config)
+    set_runtime_paused(config.project_root / "data" / "runtime_control.json", False)
+    print("Runtime resumed.")
+
+
 async def command_backup(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     archive = create_backup(config.project_root, output_dir=args.output)
@@ -421,7 +434,9 @@ async def command_status(args: argparse.Namespace) -> None:
         )
         jobs = {str(status): int(count) for status, count in job_rows.all()}
 
+    paused = is_runtime_paused(config.project_root / "data" / "runtime_control.json")
     print(f"Runtime state: {state}")
+    print(f"Paused: {paused}")
     if heartbeat:
         print(f"PID: {heartbeat.get('pid')}")
         print(f"Started at: {heartbeat.get('started_at')}")
@@ -519,6 +534,8 @@ def build_parser() -> argparse.ArgumentParser:
     restore = subparsers.add_parser("restore", help="Restore from a backup archive")
     restore.add_argument("archive", type=Path)
     restore.add_argument("--yes", action="store_true", help="Confirm overwrite")
+    subparsers.add_parser("pause", help="Pause delivery processing")
+    subparsers.add_parser("resume", help="Resume delivery processing")
     subparsers.add_parser("status", help="Show runtime and database status")
     subparsers.add_parser("stats", help="Show delivery statistics")
     return parser
@@ -559,6 +576,10 @@ async def _dispatch(args: argparse.Namespace) -> None:
         await command_run(args)
     elif args.command == "bot":
         await command_bot(args)
+    elif args.command == "pause":
+        await command_pause(args)
+    elif args.command == "resume":
+        await command_resume(args)
     elif args.command == "status":
         await command_status(args)
     elif args.command == "backup":
@@ -589,4 +610,5 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - CLI should show a concise error
         print(f"Error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
+
 

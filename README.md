@@ -131,6 +131,8 @@ python main.py run --skip-history
 
 ```powershell
 python main.py status
+python main.py pause
+python main.py resume
 ```
 
 查看投递统计：
@@ -252,6 +254,8 @@ python main.py bot
 /stats
 /jobs [status] [数量]
 /sync <源ID|all> [数量]
+/pause
+/resume
 /retry_failed [任务ID]
 /source_add [--join] <频道/群组> [...]
 /target_add <频道/群组> [...]
@@ -287,4 +291,5 @@ python main.py bot
 - 投递语义是至少一次；进程在发送成功但提交数据库前崩溃时，重启后可能重复发送。
 - 管理 Bot 当前是文本命令界面，没有 Inline Keyboard 和审核流程。
 - 不能绕过 Telegram 或目标频道的权限限制。
+
 

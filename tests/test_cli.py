@@ -27,3 +27,7 @@ def test_backup_and_restore_commands_parse() -> None:
     restore = build_parser().parse_args(["restore", "backup.zip", "--yes"])
     assert restore.command == "restore"
     assert restore.yes is True
+
+def test_pause_and_resume_commands_parse() -> None:
+    assert build_parser().parse_args(["pause"]).command == "pause"
+    assert build_parser().parse_args(["resume"]).command == "resume"

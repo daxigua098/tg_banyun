@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import AppConfig
 from app.core.heartbeat import is_process_running, read_runtime_status
+from app.core.runtime_control import is_runtime_paused, set_runtime_paused
 from app.core.transfer import SequentialTransferService
 from app.models import DeliveryJob, Route, Source, Target
 from app.services.history_service import HistorySyncService
@@ -48,6 +49,8 @@ HELP_TEXT = """TG-Mirror-Bot 管理命令
 /route_delete <源ID> <目标ID>
 /record_add [--join] <群组> [...]
 /records
+/pause
+/resume
 /help
 """
 
@@ -103,6 +106,10 @@ class ManagementCommandService:
             return await self._stats()
         if command == "jobs":
             return await self._jobs(args)
+        if command == "pause":
+            return await self._pause()
+        if command == "resume":
+            return await self._resume()
         if command == "sync":
             return await self._sync(args)
         if command == "retry_failed":
@@ -154,9 +161,13 @@ class ManagementCommandService:
         else:
             pid = int(heartbeat.get("pid") or 0)
             runtime_state = "运行中" if is_process_running(pid) else "心跳过期"
+        paused = is_runtime_paused(
+            self.config.project_root / "data" / "runtime_control.json"
+        )
         lines = [
             "TG-Mirror-Bot 状态",
             f"运行状态：{runtime_state}",
+            f"搬运状态：{'已暂停' if paused else '运行中'}",
             f"Userbot：{'已连接' if connected else '未连接'}",
             f"源：总 {source_total} / 启用 {source_enabled}",
             f"目标：总 {target_total} / 启用 {target_enabled}",
@@ -254,6 +265,20 @@ class ManagementCommandService:
                         f"{record_target.title or record_target.raw_input}"
                     )
         return "记录接收群已添加：\n" + "\n".join(results)
+
+    async def _pause(self) -> str:
+        set_runtime_paused(
+            self.config.project_root / "data" / "runtime_control.json",
+            True,
+        )
+        return "搬运已暂停。新消息仍会持久化到待处理队列。"
+
+    async def _resume(self) -> str:
+        set_runtime_paused(
+            self.config.project_root / "data" / "runtime_control.json",
+            False,
+        )
+        return "搬运已恢复。"
 
     async def _stats(self) -> str:
         stats = await self.transfer.stats()
@@ -443,3 +468,4 @@ def truncate_response(text: str, limit: int = 3800) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
