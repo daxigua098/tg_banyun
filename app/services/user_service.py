@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password, verify_password
 from app.models import WebUser
+from app.services.session_service import revoke_all_web_sessions
 
 VALID_ROLES = {"super_admin", "operator", "viewer"}
 
@@ -67,6 +68,10 @@ async def update_web_user(
         user.enabled = enabled
     if password:
         user.password_hash = hash_password(password)
+    if enabled is False:
+        await revoke_all_web_sessions(session, user.username)
+    if password:
+        await revoke_all_web_sessions(session, user.username)
     await session.commit()
     await session.refresh(user)
     return user

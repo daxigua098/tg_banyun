@@ -50,3 +50,15 @@ async def revoke_web_session(session: AsyncSession, token: str) -> bool:
     record.revoked = True
     await session.commit()
     return True
+
+async def revoke_all_web_sessions(session: AsyncSession, username: str) -> int:
+    """Revoke every active session belonging to one username."""
+    from sqlalchemy import update
+
+    result = await session.execute(
+        update(WebSession)
+        .where(WebSession.username == username, WebSession.revoked.is_(False))
+        .values(revoked=True)
+    )
+    await session.commit()
+    return result.rowcount or 0

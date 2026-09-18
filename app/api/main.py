@@ -39,11 +39,13 @@ from app.services.rule_service import (
 from app.services.session_service import (
     create_web_session,
     is_web_session_valid,
+    revoke_all_web_sessions,
     revoke_web_session,
 )
 from app.services.user_service import (
     authenticate_web_user,
     create_web_user,
+    get_web_user,
     get_web_user_by_username,
     list_web_users,
     update_web_user,
@@ -105,6 +107,11 @@ class WebUserCreate(BaseModel):
     username: str
     password: str
     role: str = "viewer"
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
 
 
 class WebUserUpdate(BaseModel):
@@ -270,6 +277,27 @@ def create_app() -> FastAPI:
         if token:
             await revoke_web_session(session, token)
         return {"logged_out": True}
+
+    @app.patch("/api/auth/password", dependencies=[Depends(require_auth)])
+    async def change_password(
+        request: Request,
+        payload: PasswordChange,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, bool]:
+        identity = getattr(request.state, "identity", {})
+        username = str(identity.get("username") or "")
+        user = await get_web_user_by_username(session, username)
+        if user is None:
+            raise HTTPException(
+                status_code=400,
+                detail="内置管理员密码保存在 .env 中，不能通过网页修改。",
+            )
+        if not authenticate_web_user(user, payload.current_password):
+            raise HTTPException(status_code=400, detail="当前密码错误")
+        if len(payload.new_password) < 8:
+            raise HTTPException(status_code=400, detail="新密码至少需要 8 位")
+        await update_web_user(session, user.id, password=payload.new_password)
+        return {"changed": True}
 
     @app.get("/api/status", dependencies=[Depends(require_auth)])
     async def status(session: AsyncSession = Depends(session_dependency)) -> dict[str, Any]:
@@ -607,6 +635,17 @@ def create_app() -> FastAPI:
             "enabled": user.enabled,
         }
 
+    @app.post("/api/users/{user_id}/revoke-sessions", dependencies=[Depends(require_auth)])
+    async def revoke_user_sessions(
+        user_id: int,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        user = await get_web_user(session, user_id)
+        if user is None:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        count = await revoke_all_web_sessions(session, user.username)
+        return {"username": user.username, "revoked": count}
+
     @app.get("/api/audit", dependencies=[Depends(require_auth)])
     async def audit_logs(
         limit: int = Query(default=100, ge=1, le=500),
@@ -672,4 +711,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-
