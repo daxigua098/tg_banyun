@@ -73,3 +73,9 @@ export const getAdditionalSettings = () =>
   api.get('/api/settings/additional').then((response) => response.data)
 export const updateAdditionalSettings = (payload) =>
   api.put('/api/settings/additional', payload).then((response) => response.data)
+
+export const uploadAdditionalImage = (file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post('/api/settings/additional/upload', formData).then((response) => response.data)
+}

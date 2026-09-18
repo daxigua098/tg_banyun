@@ -32,3 +32,5 @@ frontend/dist/
 .npm-cache/
 
 .pytest_tmp/
+
+assets/uploads/

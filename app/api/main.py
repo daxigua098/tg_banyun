@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -50,6 +50,7 @@ from app.services.settings_service import (
     get_additional_settings,
     set_additional_settings,
 )
+from app.services.upload_service import UploadError, save_additional_image
 from app.services.user_service import (
     authenticate_web_user,
     create_web_user,
@@ -342,6 +343,21 @@ def create_app() -> FastAPI:
             return {"username": username, "revoked": 0}
         count = await revoke_all_web_sessions(session, username)
         return {"username": username, "revoked": count}
+
+    @app.post("/api/settings/additional/upload", dependencies=[Depends(require_auth)])
+    async def upload_additional_image(
+        file: UploadFile = File(...),
+    ) -> dict[str, str]:
+        content = await file.read()
+        try:
+            path = save_additional_image(
+                PROJECT_ROOT,
+                file.filename,
+                content,
+            )
+        except UploadError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"path": path}
 
     @app.get("/api/settings/additional", dependencies=[Depends(require_auth)])
     async def additional_settings(

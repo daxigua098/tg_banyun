@@ -143,7 +143,19 @@
           <el-form label-width="140px">
             <el-form-item label="启用附加内容"><el-switch v-model="additionalForm.enabled" /></el-form-item>
             <el-form-item label="追加广告文字"><el-input v-model="additionalForm.text" type="textarea" :rows="4" placeholder="会追加到每条搬运帖子的文字末尾" /></el-form-item>
-            <el-form-item label="广告图/LOGO路径"><el-input v-model="additionalForm.imagePathsText" type="textarea" :rows="3" placeholder="每行一个本地图片路径，例如 assets/logo.png" /></el-form-item>
+            <el-form-item label="广告图/LOGO">
+              <div class="command-row">
+                <el-upload
+                  :show-file-list="false"
+                  :http-request="uploadAdditionalImageFile"
+                  accept=".png,.jpg,.jpeg,.webp,.gif"
+                >
+                  <el-button :loading="uploadingImage">上传图片</el-button>
+                </el-upload>
+                <span class="upload-hint">上传后将自动加入下方路径列表</span>
+              </div>
+              <el-input v-model="additionalForm.imagePathsText" type="textarea" :rows="3" placeholder="每行一个图片路径，例如 assets/uploads/xxx.png" />
+            </el-form-item>
             <el-form-item label="图片说明"><el-input v-model="additionalForm.image_caption" placeholder="发送附加图片时的说明文字" /></el-form-item>
             <el-form-item><el-button type="primary" @click="saveAdditionalSettings">保存设置</el-button></el-form-item>
           </el-form>
@@ -388,6 +400,7 @@ import {
   setTargetEnabled,
   updateUser,
   updateAdditionalSettings,
+  uploadAdditionalImage,
   updateRule,
 } from './api'
 
@@ -420,6 +433,7 @@ const addTargetForm = ref({ name: '', input: '' })
 const userForm = ref({ username: '', password: '', role: 'viewer' })
 const passwordForm = ref({ current: '', next: '', confirm: '' })
 const additionalForm = ref({ enabled: false, text: '', image_paths: [], imagePathsText: '', image_caption: '' })
+const uploadingImage = ref(false)
 const commandForm = ref({ sourceName: '', source: '', targetName: '', target: '', join: false, syncSource: 'all', syncLimit: 100 })
 const ruleDialog = ref(false)
 const ruleForm = ref({})
@@ -656,6 +670,25 @@ async function loadAdditionalSettings() {
     image_paths: data.image_paths || [],
     imagePathsText: (data.image_paths || []).join('\n'),
     image_caption: data.image_caption || '',
+  }
+}
+
+async function uploadAdditionalImageFile(options) {
+  uploadingImage.value = true
+  try {
+    const result = await uploadAdditionalImage(options.file)
+    const paths = String(additionalForm.value.imagePathsText || '')
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean)
+    paths.push(result.path)
+    additionalForm.value.imagePathsText = paths.join('\n')
+    additionalForm.value.image_paths = paths
+    ElMessage.success('图片已上传，保存设置后生效')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '图片上传失败')
+  } finally {
+    uploadingImage.value = false
   }
 }
 
