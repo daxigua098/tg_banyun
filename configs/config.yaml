@@ -15,7 +15,7 @@ telegram:
   proxy: null
 
 management_bot:
-  enabled: false
+  enabled: true
   token: ""
   admin_user_ids: []
   session_name: data/sessions/management_bot
