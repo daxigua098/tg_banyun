@@ -74,6 +74,11 @@
             </el-table-column>
             <el-table-column prop="sync_status" label="同步状态" width="110" />
             <el-table-column prop="last_synced_message_id" label="最新消息 ID" width="150" />
+            <el-table-column label="操作" width="130">
+              <template #default="{ row }">
+                <el-button type="primary" link @click="openImmediateSync(row)">立即搬运</el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </el-card>
 
@@ -282,6 +287,17 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="syncDialog" title="立即搬运历史消息" width="480px">
+      <el-form label-width="100px">
+        <el-form-item label="搬运源"><strong>{{ syncForm.sourceName }}</strong></el-form-item>
+        <el-form-item label="搬运数量"><el-input-number v-model="syncForm.limit" :min="1" :max="5000" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="syncDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitImmediateSync">开始搬运</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="sourceDialog" title="添加搬运源" width="560px">
       <el-form label-width="110px">
         <el-form-item label="自定义名称"><el-input v-model="addSourceForm.name" placeholder="例如：新闻源" /></el-form-item>
@@ -381,6 +397,8 @@ const loginHistory = ref([])
 const webUsers = ref([])
 const userDialog = ref(false)
 const sourceDialog = ref(false)
+const syncDialog = ref(false)
+const syncForm = ref({ sourceId: null, sourceName: '', limit: 30 })
 const targetDialog = ref(false)
 const addSourceForm = ref({ name: '', input: '', join: false })
 const addTargetForm = ref({ name: '', input: '' })
@@ -610,6 +628,23 @@ async function logoutAllAction() {
   const result = await logoutAllSessions()
   ElMessage.success(`已撤销 ${result.revoked} 个会话`)
   logout(false)
+}
+
+function openImmediateSync(row) {
+  syncForm.value = {
+    sourceId: row.id,
+    sourceName: row.display_name || row.title || `源 ${row.id}`,
+    limit: 30,
+  }
+  syncDialog.value = true
+}
+
+async function submitImmediateSync() {
+  if (!syncForm.value.limit || syncForm.value.limit < 1) return ElMessage.warning('请输入搬运数量')
+  await enqueueSync(syncForm.value.sourceId, syncForm.value.limit)
+  ElMessage.success('搬运命令已提交，后台将按顺序处理')
+  syncDialog.value = false
+  setTimeout(refreshAll, 1500)
 }
 
 async function submitAddSource() {
