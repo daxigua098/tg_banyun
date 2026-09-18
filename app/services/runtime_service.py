@@ -57,6 +57,7 @@ class RuntimeService:
         self.session_factory = session_factory
         self.transfer = transfer
         self.config = config
+        self.operation_lock = operation_lock
         self.notifier = notifier
         self.history = HistorySyncService(
             client,
