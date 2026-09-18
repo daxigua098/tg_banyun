@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 from app.config import ContentFilterConfig
 from app.core.content_filter import should_transfer_for_source
 from app.models import Base, Source, SourceRule
-from app.services.rule_service import load_keywords, set_source_rule
+from app.services.rule_service import load_keywords, load_sender_ids, set_source_rule
 
 
 async def _build_factory() -> tuple[async_sessionmaker, object]:
@@ -127,3 +127,21 @@ def test_sender_whitelist_filters_other_accounts() -> None:
 
     assert should_transfer_for_source(allowed, config, rule) is True
     assert should_transfer_for_source(blocked, config, rule) is False
+
+async def test_rule_lists_can_be_cleared_with_dash() -> None:
+    session_factory, engine = await _build_factory()
+    async with session_factory() as session:
+        session.add(
+            Source(
+                raw_input="@source",
+                normalized_key="username:source",
+                tg_id=100,
+                title="Source",
+            )
+        )
+        await session.commit()
+        await set_source_rule(session, 1, "senders", "111,222")
+        rule = await set_source_rule(session, 1, "senders", "-")
+        assert load_sender_ids(rule.sender_whitelist) == []
+    await engine.dispose()
+

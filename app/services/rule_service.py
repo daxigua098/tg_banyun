@@ -69,10 +69,14 @@ async def set_source_rule(
     elif column in {"post_only", "admin_only"}:
         setattr(rule, column, _parse_toggle(value))
     elif column in {"sender_whitelist", "sender_blacklist"}:
-        sender_ids = _parse_sender_ids(value)
+        sender_ids = [] if value.strip() == "-" else _parse_sender_ids(value)
         setattr(rule, column, json.dumps(sender_ids))
     else:
-        keywords = [item.strip() for item in value.split(",") if item.strip()]
+        keywords = (
+            []
+            if value.strip() == "-"
+            else [item.strip() for item in value.split(",") if item.strip()]
+        )
         setattr(rule, column, json.dumps(keywords, ensure_ascii=False))
 
     await session.commit()
@@ -126,3 +130,4 @@ def load_keywords(value: str) -> list[str]:
     except (TypeError, json.JSONDecodeError):
         return []
     return [str(item) for item in items] if isinstance(items, list) else []
+
