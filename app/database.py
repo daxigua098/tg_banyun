@@ -6,7 +6,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
@@ -60,11 +62,36 @@ def get_session_factory(config: AppConfig | None = None) -> async_sessionmaker[A
     return _session_factory
 
 
+async def _migrate_delivery_jobs(connection: AsyncConnection) -> None:
+    """Add album columns to databases created by older MVP versions."""
+    columns = await connection.run_sync(
+        lambda sync_connection: {
+            column["name"]
+            for column in inspect(sync_connection).get_columns("delivery_jobs")
+        }
+    )
+    if "source_message_ids" not in columns:
+        await connection.execute(
+            text("ALTER TABLE delivery_jobs ADD COLUMN source_message_ids TEXT")
+        )
+    if "media_group_id" not in columns:
+        await connection.execute(
+            text("ALTER TABLE delivery_jobs ADD COLUMN media_group_id BIGINT")
+        )
+        await connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_delivery_jobs_media_group_id "
+                "ON delivery_jobs (media_group_id)"
+            )
+        )
+
+
 async def init_database(config: AppConfig) -> None:
     """Create the database schema for the MVP."""
     engine = get_engine(config)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await _migrate_delivery_jobs(connection)
 
 
 @asynccontextmanager

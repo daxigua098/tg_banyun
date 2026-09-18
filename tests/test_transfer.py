@@ -14,14 +14,16 @@ from sqlalchemy.pool import StaticPool
 from telethon.errors import MessageIdInvalidError
 
 from app.config import AppConfig, TransferConfig
+from app.core.message_batch import MessageBatch
 from app.core.transfer import SequentialTransferService
 from app.models import Base, DeliveryJob, RecordTarget, Route, Source, Target
 
 
 class FakeTelegramClient:
     def __init__(self) -> None:
-        self.calls: list[tuple[int, int]] = []
+        self.calls: list[tuple[int, int | tuple[int, ...]]] = []
         self.messages: list[tuple[int, str]] = []
+        self.albums: list[bool] = []
 
     async def send_message(self, entity: int, text: str) -> None:
         self.messages.append((int(entity), text))
@@ -30,11 +32,18 @@ class FakeTelegramClient:
         self,
         *,
         entity: int,
-        messages: int,
+        messages: int | list[int],
         from_peer: int,
         drop_author: bool,
+        as_album: bool,
     ) -> SimpleNamespace:
-        self.calls.append((int(entity), int(messages)))
+        message_key: int | tuple[int, ...]
+        if isinstance(messages, list):
+            message_key = tuple(int(item) for item in messages)
+        else:
+            message_key = int(messages)
+        self.calls.append((int(entity), message_key))
+        self.albums.append(as_album)
         return SimpleNamespace(id=10_000 + len(self.calls))
 
 
@@ -214,5 +223,49 @@ async def test_successful_delivery_sends_record_message() -> None:
     assert "搬运记录" in text
     assert "状态：成功" in text
     assert "源消息：99" in text
+
+    await engine.dispose()
+
+
+async def test_album_batch_is_forwarded_as_one_album() -> None:
+    session_factory, engine = await _build_factory()
+    fake_client = FakeTelegramClient()
+    config = AppConfig(transfer=TransferConfig(delay_seconds=0))
+
+    async with session_factory() as session:
+        source = Source(
+            raw_input="@source",
+            normalized_key="username:source",
+            tg_id=100,
+            title="Source",
+        )
+        target = Target(
+            raw_input="@target",
+            normalized_key="username:target",
+            tg_id=201,
+            title="Target",
+        )
+        session.add_all([source, target])
+        await session.commit()
+        session.add(Route(source_id=source.id, target_id=target.id))
+        await session.commit()
+        source_id = source.id
+
+    service = SequentialTransferService(fake_client, session_factory, config)
+    await service.enqueue_batch(
+        source_id,
+        MessageBatch(message_ids=(10, 11), media_group_id=555),
+    )
+    await service.process_pending()
+
+    assert fake_client.calls == [(201, (10, 11))]
+    assert fake_client.albums == [True]
+
+    async with session_factory() as session:
+        job = await session.scalar(select(DeliveryJob))
+        assert job is not None
+        assert job.source_message_id == 10
+        assert job.source_message_ids == "[10, 11]"
+        assert job.media_group_id == 555
 
     await engine.dispose()

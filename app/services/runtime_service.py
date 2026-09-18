@@ -12,6 +12,7 @@ from telethon import TelegramClient, events
 
 from app.config import AppConfig
 from app.core.content_filter import should_transfer_message
+from app.core.message_batch import MessageBatch
 from app.core.transfer import SequentialTransferService
 from app.models import Source
 from app.services.history_service import HistorySyncService
@@ -39,8 +40,16 @@ class RuntimeService:
             config,
             operation_lock=operation_lock,
         )
-        self.queue: asyncio.Queue[tuple[int, int] | None] = asyncio.Queue()
-        self._new_message_filter = events.NewMessage(incoming=True)
+        self.queue: asyncio.Queue[tuple[int, MessageBatch] | None] = asyncio.Queue()
+        self._new_message_filter = events.NewMessage(
+            incoming=True,
+            func=self._is_non_album,
+        )
+        self._album_filter = events.Album(incoming=True)
+
+    @staticmethod
+    def _is_non_album(event: events.NewMessage.Event) -> bool:
+        return getattr(event.message, "grouped_id", None) is None
 
     async def run(self) -> None:
         """Catch up history sequentially, then start the realtime worker."""
@@ -49,6 +58,7 @@ class RuntimeService:
             logger.info("Recovered {} interrupted delivery jobs", recovered)
 
         self.client.add_event_handler(self._on_new_message, self._new_message_filter)
+        self.client.add_event_handler(self._on_album, self._album_filter)
         worker: asyncio.Task[None] | None = None
 
         try:
@@ -68,6 +78,7 @@ class RuntimeService:
                 with suppress(asyncio.CancelledError):
                     await worker
             self.client.remove_event_handler(self._on_new_message, self._new_message_filter)
+            self.client.remove_event_handler(self._on_album, self._album_filter)
 
     async def _sync_history_sequentially(self) -> None:
         if not self.config.history.enabled:
@@ -92,15 +103,34 @@ class RuntimeService:
             return
         if not should_transfer_message(event.message, self.config.content_filter):
             return
+        source_id = await self._source_id_for_chat(int(chat_id))
+        if source_id is not None:
+            batch = MessageBatch.from_messages([event.message])
+            await self.queue.put((source_id, batch))
+
+    async def _on_album(self, event: events.Album.Event) -> None:
+        chat_id = event.chat_id
+        if chat_id is None:
+            return
+        messages = [
+            message
+            for message in event.messages
+            if should_transfer_message(message, self.config.content_filter)
+        ]
+        if not messages:
+            return
+        source_id = await self._source_id_for_chat(int(chat_id))
+        if source_id is not None:
+            await self.queue.put((source_id, MessageBatch.from_messages(messages)))
+
+    async def _source_id_for_chat(self, chat_id: int) -> int | None:
         async with self.session_factory() as session:
-            source_id = await session.scalar(
+            return await session.scalar(
                 select(Source.id).where(
-                    Source.tg_id == int(chat_id),
+                    Source.tg_id == chat_id,
                     Source.enabled.is_(True),
                 )
             )
-        if source_id is not None:
-            await self.queue.put((int(source_id), int(event.message.id)))
 
     async def _consume_queue(self) -> None:
         while True:
@@ -113,14 +143,14 @@ class RuntimeService:
             try:
                 if item is None:
                     return
-                source_id, message_id = item
-                await self.transfer.enqueue_message(source_id, message_id)
+                source_id, batch = item
+                await self.transfer.enqueue_batch(source_id, batch)
                 async with self.session_factory() as session:
                     source = await session.get(Source, source_id)
                     if source is not None:
                         source.last_synced_message_id = max(
                             source.last_synced_message_id,
-                            message_id,
+                            batch.max_message_id,
                         )
                         await session.commit()
                 await self.transfer.process_pending()

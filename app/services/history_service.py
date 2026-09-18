@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Any
 
 from loguru import logger
 from sqlalchemy import select
@@ -14,12 +15,13 @@ from telethon import TelegramClient
 
 from app.config import AppConfig
 from app.core.content_filter import should_transfer_message
+from app.core.message_batch import MessageBatch
 from app.core.transfer import SequentialTransferService
 from app.models import Source
 
 
 class HistorySyncService:
-    """Fetch source history one source at a time and enqueue delivery jobs."""
+    """Fetch source history one source at a time and enqueue delivery batches."""
 
     def __init__(
         self,
@@ -60,7 +62,7 @@ class HistorySyncService:
         return results
 
     async def sync_source(self, source_id: int, *, limit: int | None = None) -> int:
-        """Synchronize content messages and return the number enqueued."""
+        """Synchronize media batches and return the number enqueued."""
         limit = limit or self.config.history.default_limit
         if self.config.history.order != "old_to_new":
             raise ValueError("MVP history synchronization only supports old_to_new ordering.")
@@ -76,6 +78,21 @@ class HistorySyncService:
             await session.commit()
 
         inspected = 0
+        pending_messages: list[Any] = []
+        pending_group_id: int | None = None
+
+        async def flush_pending() -> bool:
+            nonlocal inspected, pending_group_id
+            if not pending_messages:
+                return False
+            batch = MessageBatch.from_messages(pending_messages)
+            await self.transfer.enqueue_batch(source_id, batch)
+            inspected += 1
+            await self._advance_watermark(source_id, batch.max_message_id)
+            pending_messages.clear()
+            pending_group_id = None
+            return inspected >= limit
+
         try:
             async with self._operation_context():
                 async for message in self.client.iter_messages(
@@ -84,8 +101,12 @@ class HistorySyncService:
                     reverse=True,
                 ):
                     message_id = int(message.id)
+                    grouped_id = getattr(message, "grouped_id", None)
+                    grouped_id = int(grouped_id) if grouped_id is not None else None
 
                     if self.config.history.skip_pinned and getattr(message, "pinned", False):
+                        if await flush_pending():
+                            break
                         await self._advance_watermark(source_id, message_id)
                         continue
 
@@ -95,6 +116,8 @@ class HistorySyncService:
                             source_id,
                             message_id,
                         )
+                        if await flush_pending():
+                            break
                         await self._advance_watermark(source_id, message_id)
                         continue
 
@@ -104,15 +127,30 @@ class HistorySyncService:
                             source_id,
                             message_id,
                         )
+                        if await flush_pending():
+                            break
                         await self._advance_watermark(source_id, message_id)
                         continue
 
-                    await self.transfer.enqueue_message(source_id, message_id)
-                    inspected += 1
-                    await self._advance_watermark(source_id, message_id)
+                    if (
+                        pending_messages
+                        and grouped_id is not None
+                        and grouped_id == pending_group_id
+                    ):
+                        pending_messages.append(message)
+                        continue
 
-                    if inspected >= limit:
+                    if await flush_pending():
                         break
+
+                    pending_messages.append(message)
+                    pending_group_id = grouped_id
+
+                    if grouped_id is None and await flush_pending():
+                        break
+
+                if inspected < limit:
+                    await flush_pending()
         except Exception as exc:  # noqa: BLE001 - keep source loop alive
             async with self.session_factory() as session:
                 current = await session.get(Source, source_id)

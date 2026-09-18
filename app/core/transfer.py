@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -14,6 +15,7 @@ from telethon import TelegramClient
 from telethon.errors import FloodWaitError, MessageIdInvalidError
 
 from app.config import AppConfig
+from app.core.message_batch import MessageBatch
 from app.models import DeliveryJob, RecordTarget, Route, Source, Target
 
 
@@ -48,6 +50,13 @@ class SequentialTransferService:
             return len(jobs)
 
     async def enqueue_message(self, source_id: int, source_message_id: int) -> list[int]:
+        """Create a single-message batch for backwards-compatible callers."""
+        return await self.enqueue_batch(
+            source_id,
+            MessageBatch(message_ids=(source_message_id,)),
+        )
+
+    async def enqueue_batch(self, source_id: int, batch: MessageBatch) -> list[int]:
         """Create missing jobs for every enabled target routed from a source."""
         async with self.session_factory() as session:
             target_ids = list(
@@ -69,7 +78,7 @@ class SequentialTransferService:
                 await session.scalars(
                     select(DeliveryJob.target_id).where(
                         DeliveryJob.source_id == source_id,
-                        DeliveryJob.source_message_id == source_message_id,
+                        DeliveryJob.source_message_id == batch.primary_message_id,
                         DeliveryJob.target_id.in_(target_ids),
                     )
                 )
@@ -82,7 +91,9 @@ class SequentialTransferService:
                 job = DeliveryJob(
                     source_id=source_id,
                     target_id=target_id,
-                    source_message_id=source_message_id,
+                    source_message_id=batch.primary_message_id,
+                    source_message_ids=json.dumps(batch.message_ids),
+                    media_group_id=batch.media_group_id,
                     status="pending",
                     max_attempts=self.config.transfer.max_attempts,
                 )
@@ -159,12 +170,13 @@ class SequentialTransferService:
                 await session.commit()
                 return
 
+            batch = self._batch_from_job(job)
             job.status = "processing"
             job.attempt_count += 1
             await session.commit()
 
             try:
-                result = await self._forward_message(source, target, job.source_message_id)
+                result = await self._forward_message(source, target, batch)
                 job.status = "success"
                 job.last_error = None
                 job.next_retry_at = None
@@ -173,9 +185,9 @@ class SequentialTransferService:
                 await session.commit()
                 await self._send_delivery_record(source, target, job)
                 logger.info(
-                    "Delivered source={} message={} target={} as message={}",
+                    "Delivered source={} messages={} target={} as message={}",
                     source.id,
-                    job.source_message_id,
+                    batch.message_ids,
                     target.id,
                     job.target_message_id,
                 )
@@ -186,9 +198,9 @@ class SequentialTransferService:
                 await session.commit()
                 await self._send_delivery_record(source, target, job)
                 logger.warning(
-                    "Telegram FloodWait for source={} message={} target={}: {}s",
+                    "Telegram FloodWait for source={} messages={} target={}: {}s",
                     source.id,
-                    job.source_message_id,
+                    batch.message_ids,
                     target.id,
                     exc.seconds,
                 )
@@ -199,9 +211,9 @@ class SequentialTransferService:
                 await session.commit()
                 await self._send_delivery_record(source, target, job)
                 logger.warning(
-                    "Skipping invalid Telegram message source={} message={} target={}",
+                    "Skipping invalid Telegram messages source={} messages={} target={}",
                     source.id,
-                    job.source_message_id,
+                    batch.message_ids,
                     target.id,
                 )
             except Exception as exc:  # noqa: BLE001 - job failures must not stop the worker
@@ -219,20 +231,34 @@ class SequentialTransferService:
                 await session.commit()
                 await self._send_delivery_record(source, target, job)
                 logger.error(
-                    "Delivery failed source={} message={} target={} attempt={}/{} error={}",
+                    "Delivery failed source={} messages={} target={} attempt={}/{} error={}",
                     source.id,
-                    job.source_message_id,
+                    batch.message_ids,
                     target.id,
                     job.attempt_count,
                     job.max_attempts,
                     message,
                 )
                 logger.opt(exception=True).debug(
-                    "Delivery exception details source={} message={} target={}",
+                    "Delivery exception details source={} messages={} target={}",
                     source.id,
-                    job.source_message_id,
+                    batch.message_ids,
                     target.id,
                 )
+
+    @staticmethod
+    def _batch_from_job(job: DeliveryJob) -> MessageBatch:
+        if job.source_message_ids:
+            try:
+                message_ids = tuple(int(item) for item in json.loads(job.source_message_ids))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                message_ids = (job.source_message_id,)
+        else:
+            message_ids = (job.source_message_id,)
+        return MessageBatch(
+            message_ids=message_ids,
+            media_group_id=job.media_group_id,
+        )
 
     @staticmethod
     def format_delivery_record(source: Source, target: Target, job: DeliveryJob) -> str:
@@ -245,11 +271,13 @@ class SequentialTransferService:
         status = status_names.get(job.status, job.status)
         target_message = job.target_message_id or "-"
         error = job.last_error or "-"
+        batch = SequentialTransferService._batch_from_job(job)
+        message_ids = ", ".join(str(item) for item in batch.message_ids)
         return (
             "搬运记录\n"
             f"状态：{status}\n"
             f"源：{source.title or source.raw_input} (ID {source.id})\n"
-            f"源消息：{job.source_message_id}\n"
+            f"源消息：{message_ids}\n"
             f"目标：{target.title or target.raw_input} (ID {target.id})\n"
             f"目标消息：{target_message}\n"
             f"尝试：{job.attempt_count}/{job.max_attempts}\n"
@@ -290,26 +318,37 @@ class SequentialTransferService:
                     exc,
                 )
 
-    async def _forward_message(self, source: Source, target: Target, message_id: int) -> Any:
+    async def _forward_message(
+        self,
+        source: Source,
+        target: Target,
+        batch: MessageBatch,
+    ) -> Any:
         source_entity = source.tg_id or source.raw_input
         target_entity = target.tg_id or target.raw_input
         if self.operation_lock is None:
-            return await self._call_forward(source_entity, target_entity, message_id)
+            return await self._call_forward(source_entity, target_entity, batch)
 
         async with self.operation_lock:
-            return await self._call_forward(source_entity, target_entity, message_id)
+            return await self._call_forward(source_entity, target_entity, batch)
 
     async def _call_forward(
         self,
         source_entity: int | str,
         target_entity: int | str,
-        message_id: int,
+        batch: MessageBatch,
     ) -> Any:
+        messages: int | list[int]
+        if batch.is_album:
+            messages = list(batch.message_ids)
+        else:
+            messages = batch.message_ids[0]
         return await self.client.forward_messages(
             entity=target_entity,
-            messages=message_id,
+            messages=messages,
             from_peer=source_entity,
             drop_author=self.config.transfer.mode == "copy",
+            as_album=batch.is_album,
         )
 
     @staticmethod

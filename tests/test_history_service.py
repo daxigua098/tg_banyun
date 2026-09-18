@@ -21,10 +21,10 @@ class FakeHistoryClient:
 
 class FakeTransfer:
     def __init__(self) -> None:
-        self.enqueued: list[tuple[int, int]] = []
+        self.enqueued: list[tuple[int, tuple[int, ...]]] = []
 
-    async def enqueue_message(self, source_id: int, message_id: int) -> list[int]:
-        self.enqueued.append((source_id, message_id))
+    async def enqueue_batch(self, source_id: int, batch: object) -> list[int]:
+        self.enqueued.append((source_id, batch.message_ids))
         return [len(self.enqueued)]
 
 
@@ -67,7 +67,7 @@ async def test_history_skips_service_and_pinned_messages() -> None:
     inspected = await service.sync_source(1, limit=2)
 
     assert inspected == 2
-    assert transfer.enqueued == [(1, 2), (1, 4)]
+    assert transfer.enqueued == [(1, (2,)), (1, (4,))]
 
     async with session_factory() as session:
         source = await session.get(Source, 1)
@@ -135,5 +135,69 @@ async def test_history_media_only_mode_skips_text() -> None:
     inspected = await service.sync_source(1, limit=2)
 
     assert inspected == 2
-    assert transfer.enqueued == [(1, 2), (1, 3)]
+    assert transfer.enqueued == [(1, (2,)), (1, (3,))]
+    await engine.dispose()
+
+
+class FakeAlbumHistoryClient:
+    async def iter_messages(self, entity: object, **kwargs: object):
+        yield SimpleNamespace(
+            id=10,
+            action=None,
+            pinned=False,
+            photo=object(),
+            video=None,
+            media=None,
+            grouped_id=555,
+        )
+        yield SimpleNamespace(
+            id=11,
+            action=None,
+            pinned=False,
+            photo=object(),
+            video=None,
+            media=None,
+            grouped_id=555,
+        )
+        yield SimpleNamespace(
+            id=12,
+            action=None,
+            pinned=False,
+            photo=None,
+            video=object(),
+            media=None,
+            grouped_id=None,
+        )
+
+
+async def test_history_groups_album_messages_into_one_batch() -> None:
+    session_factory, engine = await _build_factory()
+    config = AppConfig(
+        history=HistoryConfig(default_limit=2, skip_pinned=True),
+        content_filter=ContentFilterConfig(media_only=True),
+        transfer=TransferConfig(delay_seconds=0),
+    )
+    transfer = FakeTransfer()
+
+    async with session_factory() as session:
+        session.add(
+            Source(
+                raw_input="@album_source",
+                normalized_key="username:album_source",
+                tg_id=102,
+                title="Album Source",
+            )
+        )
+        await session.commit()
+
+    service = HistorySyncService(
+        FakeAlbumHistoryClient(),  # type: ignore[arg-type]
+        session_factory,
+        transfer,  # type: ignore[arg-type]
+        config,
+    )
+    inspected = await service.sync_source(1, limit=2)
+
+    assert inspected == 2
+    assert transfer.enqueued == [(1, (10, 11)), (1, (12,))]
     await engine.dispose()

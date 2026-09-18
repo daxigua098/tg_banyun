@@ -143,6 +143,12 @@ class DeliveryJob(TimestampMixin, Base):
         index=True,
     )
     source_message_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    source_message_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
+    media_group_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        index=True,
+    )
     target_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
