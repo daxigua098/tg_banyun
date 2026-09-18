@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.pool import StaticPool
+from telethon.errors import MessageIdInvalidError
 
 from app.config import AppConfig, TransferConfig
 from app.core.transfer import SequentialTransferService
@@ -123,4 +124,46 @@ async def test_concurrent_process_pending_calls_do_not_duplicate_delivery() -> N
     await asyncio.gather(service.process_pending(), service.process_pending())
 
     assert fake_client.calls == [(201, 88)]
+    await engine.dispose()
+
+
+class InvalidMessageClient:
+    async def forward_messages(self, **kwargs: object) -> None:
+        raise MessageIdInvalidError(request=None)
+
+
+async def test_invalid_source_message_is_not_retried() -> None:
+    session_factory, engine = await _build_factory()
+    config = AppConfig(transfer=TransferConfig(delay_seconds=0, max_attempts=5))
+
+    async with session_factory() as session:
+        source = Source(
+            raw_input="@source",
+            normalized_key="username:source",
+            tg_id=100,
+            title="Source",
+        )
+        target = Target(
+            raw_input="@target",
+            normalized_key="username:target",
+            tg_id=201,
+            title="Target",
+        )
+        session.add_all([source, target])
+        await session.commit()
+        session.add(Route(source_id=source.id, target_id=target.id))
+        await session.commit()
+        source_id = source.id
+
+    service = SequentialTransferService(InvalidMessageClient(), session_factory, config)
+    await service.enqueue_message(source_id, 1)
+    await service.process_pending()
+
+    async with session_factory() as session:
+        job = await session.scalar(select(DeliveryJob))
+        assert job is not None
+        assert job.status == "failed"
+        assert job.attempt_count == 1
+        assert job.next_retry_at is None
+
     await engine.dispose()

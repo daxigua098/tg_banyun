@@ -59,7 +59,7 @@ class HistorySyncService:
         return results
 
     async def sync_source(self, source_id: int, *, limit: int | None = None) -> int:
-        """Synchronize one source and return the number of inspected messages."""
+        """Synchronize content messages and return the number enqueued."""
         limit = limit or self.config.history.default_limit
         if self.config.history.order != "old_to_new":
             raise ValueError("MVP history synchronization only supports old_to_new ordering.")
@@ -81,25 +81,28 @@ class HistorySyncService:
                     entity,
                     min_id=watermark,
                     reverse=True,
-                    limit=limit,
                 ):
+                    message_id = int(message.id)
+
                     if self.config.history.skip_pinned and getattr(message, "pinned", False):
+                        await self._advance_watermark(source_id, message_id)
                         continue
 
-                    await self.transfer.enqueue_message(source_id, int(message.id))
-                    inspected += 1
-
-                    async with self.session_factory() as session:
-                        current = await session.get(Source, source_id)
-                        if current is None:
-                            continue
-                        current.last_synced_message_id = max(
-                            current.last_synced_message_id,
-                            int(message.id),
+                    if getattr(message, "action", None) is not None:
+                        logger.debug(
+                            "Skipping Telegram service message source={} message={}",
+                            source_id,
+                            message_id,
                         )
-                        current.last_sync_at = datetime.now(UTC)
-                        current.sync_status = "ready"
-                        await session.commit()
+                        await self._advance_watermark(source_id, message_id)
+                        continue
+
+                    await self.transfer.enqueue_message(source_id, message_id)
+                    inspected += 1
+                    await self._advance_watermark(source_id, message_id)
+
+                    if inspected >= limit:
+                        break
         except Exception as exc:  # noqa: BLE001 - keep source loop alive
             async with self.session_factory() as session:
                 current = await session.get(Source, source_id)
@@ -110,9 +113,25 @@ class HistorySyncService:
             logger.exception("History synchronization failed for source={}", source_id)
             raise
 
+        async with self.session_factory() as session:
+            current = await session.get(Source, source_id)
+            if current is not None:
+                current.sync_status = "ready"
+                current.last_sync_at = datetime.now(UTC)
+                await session.commit()
+
         logger.info(
-            "History synchronization completed source={} inspected={}",
+            "History synchronization completed source={} enqueued={}",
             source_id,
             inspected,
         )
         return inspected
+
+    async def _advance_watermark(self, source_id: int, message_id: int) -> None:
+        async with self.session_factory() as session:
+            source = await session.get(Source, source_id)
+            if source is None:
+                return
+            source.last_synced_message_id = max(source.last_synced_message_id, message_id)
+            source.last_sync_at = datetime.now(UTC)
+            await session.commit()

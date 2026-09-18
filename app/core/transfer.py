@@ -11,7 +11,7 @@ from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from telethon import TelegramClient
-from telethon.errors import FloodWaitError
+from telethon.errors import FloodWaitError, MessageIdInvalidError
 
 from app.config import AppConfig
 from app.models import DeliveryJob, Route, Source, Target
@@ -190,6 +190,17 @@ class SequentialTransferService:
                     target.id,
                     exc.seconds,
                 )
+            except MessageIdInvalidError as exc:
+                job.status = "failed"
+                job.next_retry_at = None
+                job.last_error = f"MessageIdInvalid: {exc}"[:2000]
+                await session.commit()
+                logger.warning(
+                    "Skipping invalid Telegram message source={} message={} target={}",
+                    source.id,
+                    job.source_message_id,
+                    target.id,
+                )
             except Exception as exc:  # noqa: BLE001 - job failures must not stop the worker
                 message = f"{type(exc).__name__}: {exc}"[:2000]
                 if job.attempt_count >= job.max_attempts:
@@ -203,13 +214,20 @@ class SequentialTransferService:
                     job.next_retry_at = datetime.now(UTC) + timedelta(seconds=delay)
                 job.last_error = message
                 await session.commit()
-                logger.exception(
-                    "Delivery failed source={} message={} target={} attempt={}/{}",
+                logger.error(
+                    "Delivery failed source={} message={} target={} attempt={}/{} error={}",
                     source.id,
                     job.source_message_id,
                     target.id,
                     job.attempt_count,
                     job.max_attempts,
+                    message,
+                )
+                logger.opt(exception=True).debug(
+                    "Delivery exception details source={} message={} target={}",
+                    source.id,
+                    job.source_message_id,
+                    target.id,
                 )
 
     async def _forward_message(self, source: Source, target: Target, message_id: int) -> Any:
