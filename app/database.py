@@ -86,12 +86,37 @@ async def _migrate_delivery_jobs(connection: AsyncConnection) -> None:
         )
 
 
+async def _migrate_source_rules(connection: AsyncConnection) -> None:
+    """Add sender filtering columns to databases created by older MVP versions."""
+    columns = await connection.run_sync(
+        lambda sync_connection: {
+            column["name"]
+            for column in inspect(sync_connection).get_columns("source_rules")
+        }
+    )
+    if "post_only" not in columns:
+        await connection.execute(
+            text(
+                "ALTER TABLE source_rules "
+                "ADD COLUMN post_only BOOLEAN NOT NULL DEFAULT 0"
+            )
+        )
+    if "admin_only" not in columns:
+        await connection.execute(
+            text(
+                "ALTER TABLE source_rules "
+                "ADD COLUMN admin_only BOOLEAN NOT NULL DEFAULT 0"
+            )
+        )
+
+
 async def init_database(config: AppConfig) -> None:
     """Create the database schema for the MVP."""
     engine = get_engine(config)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
         await _migrate_delivery_jobs(connection)
+        await _migrate_source_rules(connection)
 
 
 @asynccontextmanager
@@ -113,3 +138,4 @@ async def dispose_database() -> None:
         await _engine.dispose()
     _engine = None
     _session_factory = None
+

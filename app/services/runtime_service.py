@@ -17,6 +17,7 @@ from app.core.content_filter import should_transfer_for_source
 from app.core.heartbeat import HeartbeatWriter
 from app.core.message_batch import MessageBatch
 from app.core.runtime_control import is_runtime_paused
+from app.core.sender_filter import is_admin_or_channel_post
 from app.core.transfer import SequentialTransferService
 from app.models import Route, Source, Target
 from app.services.backup_service import (
@@ -189,7 +190,9 @@ class RuntimeService:
             removed,
         )
         if self.notifier is not None:
-            await self.notifier.backup(f"备份文件：{archive.name}\n清理旧备份：{removed} 份")
+            await self.notifier.backup(
+                f"备份文件：{archive.name}\n清理旧备份：{removed} 份"
+            )
 
     async def _sync_history_sequentially(self) -> None:
         if not self.config.history.enabled:
@@ -251,8 +254,16 @@ class RuntimeService:
 
     async def _message_allowed(self, source_id: int, message: object) -> bool:
         async with self.session_factory() as session:
+            source = await session.get(Source, source_id)
             rule = await get_source_rule(session, source_id)
-        return should_transfer_for_source(message, self.config.content_filter, rule)
+        if source is None:
+            return False
+        if not should_transfer_for_source(message, self.config.content_filter, rule):
+            return False
+        if rule.admin_only:
+            entity = source.tg_id or source.raw_input
+            return await is_admin_or_channel_post(self.client, entity, message)
+        return True
 
     async def _consume_queue(self) -> None:
         while True:
@@ -280,3 +291,6 @@ class RuntimeService:
                     await self.transfer.process_pending()
             finally:
                 self.queue.task_done()
+
+
+

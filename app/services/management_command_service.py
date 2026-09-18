@@ -94,7 +94,9 @@ FULL_HELP_TEXT = """TG-Mirror-Bot 完整菜单
 /rules  查看全部规则
 /rule <源ID>  查看单个规则
 /rule_set <源ID> <字段> <值>
-字段：photo on/off、video on/off、whitelist 词1,词2、blacklist 词1,词2、forwarded skip/allow
+字段：
+photo on/off、video on/off、forwarded skip/allow、post on/off、admin on/off
+whitelist 词1,词2、blacklist 词1,词2
 
 记录接收群
 /record_add [--join] <群组> [...]
@@ -351,7 +353,9 @@ class ManagementCommandService:
                 f"源 {source.id} {source.title or source.raw_input}\n"
                 f"图片={'开' if rule.allow_photo else '关'} "
                 f"视频={'开' if rule.allow_video else '关'} "
-                f"转发={'跳过' if rule.skip_forwarded else '允许'}\n"
+                f"转发={'跳过' if rule.skip_forwarded else '允许'} "
+                f"仅频道={'是' if rule.post_only else '否'} "
+                f"仅管理={'是' if rule.admin_only else '否'}\n"
                 f"白名单={whitelist} 黑名单={blacklist}"
             )
         return "\n\n".join(lines)
@@ -367,6 +371,8 @@ class ManagementCommandService:
             f"图片：{'开启' if rule.allow_photo else '关闭'}\n"
             f"视频：{'开启' if rule.allow_video else '关闭'}\n"
             f"转发消息：{'跳过' if rule.skip_forwarded else '允许'}\n"
+            f"仅频道帖子：{'是' if rule.post_only else '否'}\n"
+            f"仅管理员：{'是' if rule.admin_only else '否'}\n"
             f"关键词白名单：{','.join(load_keywords(rule.keyword_whitelist)) or '无'}\n"
             f"关键词黑名单：{','.join(load_keywords(rule.keyword_blacklist)) or '无'}"
         )
@@ -383,7 +389,9 @@ class ManagementCommandService:
             f"源 {source_id} 规则已更新\n"
             f"图片={'开' if rule.allow_photo else '关'} "
             f"视频={'开' if rule.allow_video else '关'} "
-            f"转发={'跳过' if rule.skip_forwarded else '允许'}\n"
+            f"转发={'跳过' if rule.skip_forwarded else '允许'} "
+            f"仅频道={'是' if rule.post_only else '否'} "
+            f"仅管理={'是' if rule.admin_only else '否'}\n"
             f"白名单={','.join(load_keywords(rule.keyword_whitelist)) or '-'} "
             f"黑名单={','.join(load_keywords(rule.keyword_blacklist)) or '-'}"
         )
@@ -587,3 +595,5 @@ def truncate_response(text: str, limit: int = 3800) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
+
+

@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.config import ContentFilterConfig
 from app.core.content_filter import should_transfer_for_source
-from app.models import Base, Source
+from app.models import Base, Source, SourceRule
 from app.services.rule_service import load_keywords, set_source_rule
 
 
@@ -70,4 +70,30 @@ async def test_source_rule_update_and_keyword_filter() -> None:
         is False
     )
     await engine.dispose()
+
+
+def test_post_only_rule_rejects_group_messages() -> None:
+    rule = SourceRule(source_id=1, post_only=True, allow_photo=True, allow_video=True)
+    group_message = SimpleNamespace(
+        photo=object(),
+        video=None,
+        media=None,
+        raw_text="",
+        forward=None,
+        fwd_from=None,
+        post=False,
+    )
+    channel_post = SimpleNamespace(
+        photo=object(),
+        video=None,
+        media=None,
+        raw_text="",
+        forward=None,
+        fwd_from=None,
+        post=True,
+    )
+    config = ContentFilterConfig(media_only=True)
+
+    assert should_transfer_for_source(group_message, config, rule) is False
+    assert should_transfer_for_source(channel_post, config, rule) is True
 

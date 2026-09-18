@@ -16,6 +16,7 @@ from telethon import TelegramClient
 from app.config import AppConfig
 from app.core.content_filter import should_transfer_for_source
 from app.core.message_batch import MessageBatch
+from app.core.sender_filter import is_admin_or_channel_post
 from app.core.transfer import SequentialTransferService
 from app.models import Source
 from app.services.rule_service import get_source_rule
@@ -134,6 +135,21 @@ class HistorySyncService:
                         await self._advance_watermark(source_id, message_id)
                         continue
 
+                    if rule.admin_only and not await is_admin_or_channel_post(
+                        self.client,
+                        entity,
+                        message,
+                    ):
+                        logger.debug(
+                            "Skipping non-admin message source={} message={}",
+                            source_id,
+                            message_id,
+                        )
+                        if await flush_pending():
+                            break
+                        await self._advance_watermark(source_id, message_id)
+                        continue
+
                     if (
                         pending_messages
                         and grouped_id is not None
@@ -185,3 +201,5 @@ class HistorySyncService:
             source.last_synced_message_id = max(source.last_synced_message_id, message_id)
             source.last_sync_at = datetime.now(UTC)
             await session.commit()
+
+

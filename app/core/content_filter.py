@@ -54,6 +54,8 @@ def should_transfer_for_source(
         return False
     if media_kind == "video" and not bool(rule.allow_video):
         return False
+    if bool(rule.post_only) and not bool(getattr(message, "post", False)):
+        return False
 
     text = str(getattr(message, "raw_text", "") or "").casefold()
     whitelist = [keyword.casefold() for keyword in load_keywords(rule.keyword_whitelist)]
@@ -69,3 +71,4 @@ def should_transfer_for_source(
     ):
         return False
     return True
+

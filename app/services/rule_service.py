@@ -15,6 +15,8 @@ RULE_FIELDS = {
     "whitelist": "keyword_whitelist",
     "blacklist": "keyword_blacklist",
     "forwarded": "skip_forwarded",
+    "post": "post_only",
+    "admin": "admin_only",
 }
 
 
@@ -62,6 +64,8 @@ async def set_source_rule(
         if value.lower() not in {"skip", "allow"}:
             raise ValueError("forwarded 只能设置为 skip 或 allow。")
         rule.skip_forwarded = value.lower() == "skip"
+    elif column in {"post_only", "admin_only"}:
+        setattr(rule, column, _parse_toggle(value))
     else:
         keywords = [item.strip() for item in value.split(",") if item.strip()]
         setattr(rule, column, json.dumps(keywords, ensure_ascii=False))
@@ -87,3 +91,4 @@ def load_keywords(value: str) -> list[str]:
     except (TypeError, json.JSONDecodeError):
         return []
     return [str(item) for item in items] if isinstance(items, list) else []
+
