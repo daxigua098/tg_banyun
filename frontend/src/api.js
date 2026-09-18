@@ -41,8 +41,8 @@ export const enqueueAddSource = (name, input, join = false) =>
   api.post('/api/control/add-source', { name, input, join }).then((response) => response.data)
 export const enqueueAddTarget = (name, input) =>
   api.post('/api/control/add-target', { name, input }).then((response) => response.data)
-export const enqueueSync = (sourceId, limit = 100) =>
-  api.post('/api/control/sync', { source_id: sourceId, limit }).then((response) => response.data)
+export const enqueueSync = (sourceId, limit = 100, keywords = []) =>
+  api.post('/api/control/sync', { source_id: sourceId, limit, keywords }).then((response) => response.data)
 
 export const checkAuth = () => api.get('/api/auth/check').then((response) => response.data)
 

@@ -201,3 +201,70 @@ async def test_history_groups_album_messages_into_one_batch() -> None:
     assert inspected == 2
     assert transfer.enqueued == [(1, (10, 11)), (1, (12,))]
     await engine.dispose()
+
+class FakeFuzzyHistoryClient:
+    async def iter_messages(self, entity: object, **kwargs: object):
+        yield SimpleNamespace(
+            id=20,
+            action=None,
+            pinned=False,
+            photo=object(),
+            video=None,
+            media=None,
+            raw_text='AI news',
+        )
+        yield SimpleNamespace(
+            id=21,
+            action=None,
+            pinned=False,
+            photo=object(),
+            video=None,
+            media=None,
+            raw_text='普通广告',
+        )
+        yield SimpleNamespace(
+            id=22,
+            action=None,
+            pinned=False,
+            photo=object(),
+            video=None,
+            media=None,
+            raw_text='少女日常',
+        )
+
+
+async def test_history_fuzzy_keyword_filter() -> None:
+    session_factory, engine = await _build_factory()
+    config = AppConfig(
+        history=HistoryConfig(default_limit=2, skip_pinned=True),
+        content_filter=ContentFilterConfig(media_only=True),
+        transfer=TransferConfig(delay_seconds=0),
+    )
+    transfer = FakeTransfer()
+
+    async with session_factory() as session:
+        session.add(
+            Source(
+                raw_input='@fuzzy_source',
+                normalized_key='username:fuzzy_source',
+                tg_id=103,
+                title='Fuzzy Source',
+            )
+        )
+        await session.commit()
+
+    service = HistorySyncService(
+        FakeFuzzyHistoryClient(),  # type: ignore[arg-type]
+        session_factory,
+        transfer,  # type: ignore[arg-type]
+        config,
+    )
+    inspected = await service.sync_source(
+        1,
+        limit=2,
+        fuzzy_keywords=['AI', '主播', '少女'],
+    )
+
+    assert inspected == 2
+    assert transfer.enqueued == [(1, (20,)), (1, (22,))]
+    await engine.dispose()

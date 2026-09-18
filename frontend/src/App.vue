@@ -450,6 +450,10 @@
       <el-form label-width="100px">
         <el-form-item label="搬运源"><strong>{{ syncForm.sourceName }}</strong></el-form-item>
         <el-form-item label="搬运数量"><el-input-number v-model="syncForm.limit" :min="1" :max="5000" /></el-form-item>
+        <el-form-item label="关键词筛选">
+          <el-input v-model="syncForm.keywordsText" placeholder="可选，多个关键词用逗号分隔，例如：AI,主播,少女" />
+          <div class="upload-hint">模糊匹配帖子文字或说明，命中任意一个关键词才搬运；留空则搬运全部。</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="syncDialog = false">取消</el-button>
@@ -567,7 +571,7 @@ const webUsers = ref([])
 const userDialog = ref(false)
 const sourceDialog = ref(false)
 const syncDialog = ref(false)
-const syncForm = ref({ sourceId: null, sourceName: '', limit: 30 })
+const syncForm = ref({ sourceId: null, sourceName: '', limit: 30, keywordsText: '' })
 const targetDialog = ref(false)
 const addSourceForm = ref({ name: '', input: '', join: false })
 const addTargetForm = ref({ name: '', input: '' })
@@ -1055,13 +1059,15 @@ function openImmediateSync(row) {
     sourceId: row.id,
     sourceName: row.display_name || row.title || `源 ${row.id}`,
     limit: 30,
+    keywordsText: '',
   }
   syncDialog.value = true
 }
 
 async function submitImmediateSync() {
   if (!syncForm.value.limit || syncForm.value.limit < 1) return ElMessage.warning('请输入搬运数量')
-  await enqueueSync(syncForm.value.sourceId, syncForm.value.limit)
+  const keywords = String(syncForm.value.keywordsText || '').split(',').map((item) => item.trim()).filter(Boolean)
+  await enqueueSync(syncForm.value.sourceId, syncForm.value.limit, keywords)
   ElMessage.success('搬运命令已提交，后台将按顺序处理')
   syncDialog.value = false
   activePage.value = 'queue'

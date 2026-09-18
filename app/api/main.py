@@ -763,7 +763,11 @@ def create_app() -> FastAPI:
         command = await enqueue_control_command(
             session,
             COMMAND_SYNC,
-            {"source_id": source_value, "limit": payload.limit},
+            {
+                "source_id": source_value,
+                "limit": payload.limit,
+                "keywords": payload.keywords,
+            },
         )
         return {"id": command.id, "status": command.status}
 
@@ -997,6 +1001,7 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
 
 
 

@@ -47,7 +47,12 @@ class HistorySyncService:
         async with self.operation_lock:
             yield
 
-    async def sync_all(self, *, limit: int | None = None) -> dict[int, int]:
+    async def sync_all(
+        self,
+        *,
+        limit: int | None = None,
+        fuzzy_keywords: list[str] | None = None,
+    ) -> dict[int, int]:
         """Synchronize all enabled sources in deterministic order."""
         async with self.session_factory() as session:
             sources = list(
@@ -60,10 +65,20 @@ class HistorySyncService:
 
         results: dict[int, int] = {}
         for source in sources:
-            results[source.id] = await self.sync_source(source.id, limit=limit)
+            results[source.id] = await self.sync_source(
+                source.id,
+                limit=limit,
+                fuzzy_keywords=fuzzy_keywords,
+            )
         return results
 
-    async def sync_source(self, source_id: int, *, limit: int | None = None) -> int:
+    async def sync_source(
+        self,
+        source_id: int,
+        *,
+        limit: int | None = None,
+        fuzzy_keywords: list[str] | None = None,
+    ) -> int:
         """Synchronize media batches and return the number enqueued."""
         limit = limit or self.config.history.default_limit
         if self.config.history.order != "old_to_new":
@@ -135,6 +150,20 @@ class HistorySyncService:
                         await self._advance_watermark(source_id, message_id)
                         continue
 
+                    if fuzzy_keywords:
+                        text = str(getattr(message, "raw_text", "") or "").casefold()
+                        normalized_keywords = [item.casefold() for item in fuzzy_keywords]
+                        if not any(keyword in text for keyword in normalized_keywords):
+                            logger.debug(
+                                "Skipping fuzzy-filtered message source={} message={}",
+                                source_id,
+                                message_id,
+                            )
+                            if await flush_pending():
+                                break
+                            await self._advance_watermark(source_id, message_id)
+                            continue
+
                     if rule.admin_only and not await is_admin_or_channel_post(
                         self.client,
                         entity,
@@ -201,5 +230,6 @@ class HistorySyncService:
             source.last_synced_message_id = max(source.last_synced_message_id, message_id)
             source.last_sync_at = datetime.now(UTC)
             await session.commit()
+
 
 
