@@ -86,3 +86,14 @@ def test_route_page_offers_edit_action() -> None:
     assert "saveRouteEditor" in app_source
     assert "编辑路由搭配" in app_source
     assert "export const updateRoute" in api_source
+
+
+def test_user_management_offers_edit_with_password_and_delete() -> None:
+    app_source = (PROJECT_ROOT / "frontend" / "src" / "App.vue").read_text(encoding="utf-8")
+    api_source = (PROJECT_ROOT / "frontend" / "src" / "api.js").read_text(encoding="utf-8")
+
+    assert "openUserEditor(row)" in app_source
+    assert "saveUserEditor" in app_source
+    assert "removeUser(row)" in app_source
+    assert "留空则不修改密码" in app_source
+    assert "export const deleteUser" in api_source

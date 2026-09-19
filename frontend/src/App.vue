@@ -405,6 +405,12 @@
             <el-table-column label="状态" width="100">
               <template #default="{ row }"><el-switch v-model="row.enabled" @change="changeUserEnabled(row)" /></template>
             </el-table-column>
+            <el-table-column label="操作" width="150">
+              <template #default="{ row }">
+                <el-button type="primary" link @click="openUserEditor(row)">编辑</el-button>
+                <el-button type="danger" link @click="removeUser(row)">删除</el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </el-card>
 
@@ -668,6 +674,27 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="userEditDialog" title="编辑用户" width="480px">
+      <el-form label-width="100px">
+        <el-form-item label="用户名"><el-input v-model="userEditForm.username" disabled /></el-form-item>
+        <el-form-item label="新密码">
+          <el-input v-model="userEditForm.password" type="password" show-password placeholder="留空则不修改密码" />
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-select v-model="userEditForm.role">
+            <el-option label="超级管理员" value="super_admin" />
+            <el-option label="操作员" value="operator" />
+            <el-option label="只读用户" value="viewer" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="启用"><el-switch v-model="userEditForm.enabled" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="userEditDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveUserEditor">保存修改</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="userDialog" title="新增用户" width="480px">
       <el-form label-width="90px">
         <el-form-item label="用户名"><el-input v-model="userForm.username" /></el-form-item>
@@ -729,6 +756,7 @@ import {
   deleteSource,
   setTargetEnabled,
   updateUser,
+  deleteUser,
   updateAdditionalSettings,
   updateSyncBehavior,
   updateAdImageDefaults,
@@ -796,6 +824,8 @@ const targetDialog = ref(false)
 const addSourceForm = ref({ name: '', input: '', join: false })
 const addTargetForm = ref({ name: '', input: '' })
 const userForm = ref({ username: '', password: '', role: 'viewer' })
+const userEditDialog = ref(false)
+const userEditForm = ref({ id: null, username: '', password: '', role: 'viewer', enabled: true })
 const passwordForm = ref({ current: '', next: '', confirm: '' })
 const additionalForm = ref({ enabled: false, text: '', image_paths: [], imagePathsText: '', image_caption: '' })
 const syncSettings = ref({ edits: false, deletes: false })
@@ -1492,6 +1522,39 @@ async function saveUser() {
   ElMessage.success('用户已创建')
   userDialog.value = false
   userForm.value = { username: '', password: '', role: 'viewer' }
+  await refreshAll()
+}
+
+function openUserEditor(row) {
+  userEditForm.value = {
+    id: row.id,
+    username: row.username,
+    password: '',
+    role: row.role,
+    enabled: row.enabled,
+  }
+  userEditDialog.value = true
+}
+
+async function saveUserEditor() {
+  await updateUser(userEditForm.value.id, {
+    role: userEditForm.value.role,
+    enabled: userEditForm.value.enabled,
+    password: userEditForm.value.password || null,
+  })
+  ElMessage.success('用户信息已修改，已撤销该用户的旧会话')
+  userEditDialog.value = false
+  await refreshAll()
+}
+
+async function removeUser(row) {
+  await ElMessageBox.confirm(
+    `确定删除用户“${row.username}”吗？删除后该用户的所有登录会话会立即失效。`,
+    '删除用户',
+    { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' },
+  )
+  await deleteUser(row.id)
+  ElMessage.success('用户已删除')
   await refreshAll()
 }
 

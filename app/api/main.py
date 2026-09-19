@@ -99,6 +99,7 @@ from app.services.upload_service import UploadError, save_additional_image
 from app.services.user_service import (
     authenticate_web_user,
     create_web_user,
+    delete_web_user,
     get_web_user,
     get_web_user_by_username,
     list_web_users,
@@ -1005,6 +1006,23 @@ def create_app() -> FastAPI:
             "role": user.role,
             "enabled": user.enabled,
         }
+
+    @app.delete("/api/users/{user_id}", dependencies=[Depends(require_auth)])
+    async def remove_user(
+        user_id: int,
+        request: Request,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        identity = authenticated_identity(request)
+        try:
+            user = await delete_web_user(
+                session,
+                user_id,
+                current_username=identity["username"] if identity else None,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"id": user_id, "username": user.username, "deleted": True}
 
     @app.post("/api/users/{user_id}/revoke-sessions", dependencies=[Depends(require_auth)])
     async def revoke_user_sessions(

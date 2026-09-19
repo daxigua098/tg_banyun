@@ -60,6 +60,7 @@ export const getUsers = () => api.get('/api/users').then((response) => response.
 export const createUser = (payload) => api.post('/api/users', payload).then((response) => response.data)
 export const updateUser = (id, payload) =>
   api.patch(`/api/users/${id}`, payload).then((response) => response.data)
+export const deleteUser = (id) => api.delete(`/api/users/${id}`).then((response) => response.data)
 
 export const logoutSession = () => api.post('/api/auth/logout').then((response) => response.data)
 

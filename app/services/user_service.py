@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import hash_password, verify_password
@@ -79,3 +79,32 @@ async def update_web_user(
 
 def authenticate_web_user(user: WebUser, password: str) -> bool:
     return user.enabled and verify_password(password, user.password_hash)
+
+
+async def delete_web_user(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    current_username: str | None = None,
+) -> WebUser:
+    """Delete a web user after protecting the active and final super admin."""
+    user = await session.get(WebUser, user_id)
+    if user is None:
+        raise ValueError("用户不存在。")
+    if current_username and user.username == current_username:
+        raise ValueError("不能删除当前登录用户。")
+    if user.role == "super_admin":
+        super_admin_count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(WebUser)
+                .where(WebUser.role == "super_admin")
+            )
+            or 0
+        )
+        if super_admin_count <= 1:
+            raise ValueError("至少需要保留一个超级管理员。")
+    await revoke_all_web_sessions(session, user.username)
+    await session.delete(user)
+    await session.commit()
+    return user

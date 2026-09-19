@@ -379,3 +379,28 @@ def test_update_route_endpoint_changes_pair(monkeypatch) -> None:
         "target_id": 9,
         "enabled": True,
     }
+
+
+def test_delete_user_endpoint_revokes_and_returns_user(monkeypatch) -> None:
+    config = load_config()
+    config.web.api_token = "test-token"
+    monkeypatch.setattr(api_main, "load_config", lambda: config)
+
+    async def fake_delete_web_user(session, user_id, current_username=None):
+        assert (user_id, current_username) == (8, "api-token")
+        return SimpleNamespace(id=8, username="operator8")
+
+    monkeypatch.setattr(api_main, "delete_web_user", fake_delete_web_user)
+
+    with TestClient(create_app()) as client:
+        response = client.delete(
+            "/api/users/8",
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": 8,
+        "username": "operator8",
+        "deleted": True,
+    }
