@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.models import Base, Route, Source, Target
+from app.models import Base, DeliveryJob, Route, Source, SourceRule, Target
 from app.services import source_service
 
 
@@ -133,4 +133,40 @@ async def test_add_routes_bulk_builds_cartesian_pairs_and_skips_duplicates() -> 
         (source_ids[1], target_ids[0]),
         (source_ids[1], target_ids[1]),
     ]
+    await engine.dispose()
+
+
+async def test_delete_source_removes_routes_rules_and_jobs() -> None:
+    session_factory, engine = await _build_factory()
+    async with session_factory() as session:
+        source = Source(
+            raw_input="@delete",
+            normalized_key="username:delete",
+            tg_id=700,
+            title="Delete",
+        )
+        target = Target(
+            raw_input="@target",
+            normalized_key="username:target",
+            tg_id=701,
+            title="Target",
+        )
+        session.add_all([source, target])
+        await session.commit()
+        session.add(Route(source_id=source.id, target_id=target.id))
+        session.add(SourceRule(source_id=source.id))
+        session.add(
+            DeliveryJob(
+                source_id=source.id,
+                target_id=target.id,
+                source_message_id=1,
+                status="success",
+            )
+        )
+        await session.commit()
+        source_id = source.id
+
+        deleted = await source_service.delete_source(session, source_id)
+
+    assert deleted == {"routes": 1, "jobs": 1, "rules": 1}
     await engine.dispose()

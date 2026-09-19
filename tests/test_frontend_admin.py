@@ -67,3 +67,12 @@ def test_content_settings_offer_edit_and_delete_sync_toggles() -> None:
     assert "源消息删除同步" in app_source
     assert "getSyncBehavior" in api_source
     assert "updateSyncBehavior" in api_source
+
+
+def test_source_page_offers_delete_action() -> None:
+    app_source = (PROJECT_ROOT / "frontend" / "src" / "App.vue").read_text(encoding="utf-8")
+    api_source = (PROJECT_ROOT / "frontend" / "src" / "api.js").read_text(encoding="utf-8")
+
+    assert "removeSource(row)" in app_source
+    assert "deleteSource(row.id)" in app_source
+    assert "export const deleteSource" in api_source

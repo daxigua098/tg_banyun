@@ -91,10 +91,11 @@
             </el-table-column>
             <el-table-column prop="sync_status" label="同步状态" width="110" />
             <el-table-column prop="last_synced_message_id" label="最新消息 ID" width="150" />
-            <el-table-column label="操作" width="220">
+            <el-table-column label="操作" width="280">
               <template #default="{ row }">
                 <el-button type="primary" link @click="openImmediateSync(row)">立即搬运</el-button>
                 <el-button link @click="checkSourceAccess(row)">检测权限</el-button>
+                <el-button type="danger" link @click="removeSource(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -694,6 +695,7 @@ import {
   resumeRuntime,
   stopRuntime,
   setSourceEnabled,
+  deleteSource,
   setTargetEnabled,
   updateUser,
   updateAdditionalSettings,
@@ -918,6 +920,18 @@ async function stopAll() {
   )
   const result = await stopRuntime()
   ElMessage.success(`已停止全部任务，取消 ${result.cancelled} 条等待任务`)
+  await refreshAll()
+}
+
+async function removeSource(row) {
+  const name = row.display_name || row.title || `源 ${row.id}`
+  await ElMessageBox.confirm(
+    `确定删除搬运源“${name}”吗？该源的路由、过滤规则和历史投递任务也会一并删除。`,
+    '删除搬运源',
+    { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' },
+  )
+  const result = await deleteSource(row.id)
+  ElMessage.success(`已删除源，清理路由 ${result.routes} 条、任务 ${result.jobs} 条`)
   await refreshAll()
 }
 

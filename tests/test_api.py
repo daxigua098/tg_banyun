@@ -320,3 +320,29 @@ def test_sync_behavior_settings_endpoint_round_trip(monkeypatch) -> None:
     assert current.json() == {"edits": False, "deletes": False}
     assert updated.status_code == 200
     assert updated.json() == {"edits": True, "deletes": True}
+
+
+def test_delete_source_endpoint_returns_cleanup_counts(monkeypatch) -> None:
+    config = load_config()
+    config.web.api_token = ""
+    config.web.admin_password = ""
+    config.web.session_secret = ""
+    monkeypatch.setattr(api_main, "load_config", lambda: config)
+
+    async def fake_delete_source(session, source_id):
+        assert source_id == 7
+        return {"routes": 2, "jobs": 9, "rules": 1}
+
+    monkeypatch.setattr(api_main, "delete_source", fake_delete_source)
+
+    with TestClient(create_app()) as client:
+        response = client.delete("/api/sources/7")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": 7,
+        "deleted": True,
+        "routes": 2,
+        "jobs": 9,
+        "rules": 1,
+    }

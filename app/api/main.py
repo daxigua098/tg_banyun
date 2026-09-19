@@ -88,7 +88,7 @@ from app.services.settings_service import (
     set_additional_settings,
     set_sync_behavior,
 )
-from app.services.source_service import add_routes_bulk
+from app.services.source_service import add_routes_bulk, delete_source
 from app.services.upload_asset_service import (
     UploadAssetError,
     delete_upload_assets,
@@ -618,6 +618,17 @@ def create_app() -> FastAPI:
         source.enabled = payload.enabled
         await session.commit()
         return {"id": source.id, "enabled": source.enabled}
+
+    @app.delete("/api/sources/{source_id}", dependencies=[Depends(require_auth)])
+    async def remove_source(
+        source_id: int,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        try:
+            deleted = await delete_source(session, source_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"id": source_id, "deleted": True, **deleted}
 
     @app.patch("/api/targets/{target_id}", dependencies=[Depends(require_auth)])
     async def update_target(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from telethon import TelegramClient, utils
 from telethon.errors import UserAlreadyParticipantError
@@ -12,7 +12,7 @@ from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
 
 from app.core.source_resolver import ResolvedChat, resolve_chat_input
-from app.models import Route, Source, Target
+from app.models import DeliveryJob, Route, Source, SourceRule, Target
 
 
 def _entity_info(entity: Any) -> tuple[int, str | None, str | None, bool]:
@@ -222,6 +222,28 @@ async def add_routes_bulk(
     for route in created:
         await session.refresh(route)
     return created, skipped
+
+
+async def delete_source(session: AsyncSession, source_id: int) -> dict[str, int]:
+    """Delete a source and all of its associated configuration and jobs."""
+    source = await session.get(Source, source_id)
+    if source is None:
+        raise ValueError(f"源 {source_id} 不存在。")
+
+    route_result = await session.execute(delete(Route).where(Route.source_id == source_id))
+    job_result = await session.execute(
+        delete(DeliveryJob).where(DeliveryJob.source_id == source_id)
+    )
+    rule_result = await session.execute(
+        delete(SourceRule).where(SourceRule.source_id == source_id)
+    )
+    await session.delete(source)
+    await session.commit()
+    return {
+        "routes": int(route_result.rowcount or 0),
+        "jobs": int(job_result.rowcount or 0),
+        "rules": int(rule_result.rowcount or 0),
+    }
 
 
 async def list_sources(session: AsyncSession) -> list[Source]:

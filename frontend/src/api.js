@@ -26,6 +26,7 @@ export const stopRuntime = () => api.post('/api/stop').then((response) => respon
 
 export const setSourceEnabled = (id, enabled) =>
   api.patch(`/api/sources/${id}`, { enabled }).then((response) => response.data)
+export const deleteSource = (id) => api.delete(`/api/sources/${id}`).then((response) => response.data)
 export const setTargetEnabled = (id, enabled) =>
   api.patch(`/api/targets/${id}`, { enabled }).then((response) => response.data)
 export const createRoutesBatch = (sourceIds, targetIds) =>
