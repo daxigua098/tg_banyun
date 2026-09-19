@@ -88,7 +88,7 @@ from app.services.settings_service import (
     set_additional_settings,
     set_sync_behavior,
 )
-from app.services.source_service import add_routes_bulk, delete_source
+from app.services.source_service import add_routes_bulk, delete_source, update_route
 from app.services.upload_asset_service import (
     UploadAssetError,
     delete_upload_assets,
@@ -702,6 +702,28 @@ def create_app() -> FastAPI:
                 {"source_id": source_id, "target_id": target_id}
                 for source_id, target_id in skipped
             ],
+        }
+
+    @app.put("/api/routes/{route_id}", dependencies=[Depends(require_auth)])
+    async def edit_route(
+        route_id: int,
+        payload: RouteCreate,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        try:
+            route = await update_route(
+                session,
+                route_id,
+                payload.source_id,
+                payload.target_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "id": route.id,
+            "source_id": route.source_id,
+            "target_id": route.target_id,
+            "enabled": route.enabled,
         }
 
     @app.delete("/api/routes/{route_id}", dependencies=[Depends(require_auth)])

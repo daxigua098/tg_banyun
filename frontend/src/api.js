@@ -31,6 +31,8 @@ export const setTargetEnabled = (id, enabled) =>
   api.patch(`/api/targets/${id}`, { enabled }).then((response) => response.data)
 export const createRoutesBatch = (sourceIds, targetIds) =>
   api.post('/api/routes/batch', { source_ids: sourceIds, target_ids: targetIds }).then((response) => response.data)
+export const updateRoute = (id, sourceId, targetId) =>
+  api.put(`/api/routes/${id}`, { source_id: sourceId, target_id: targetId }).then((response) => response.data)
 export const deleteRoute = (id) =>
   api.delete(`/api/routes/${id}`).then((response) => response.data)
 export const updateRule = (sourceId, rule) =>

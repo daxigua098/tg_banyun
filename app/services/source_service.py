@@ -224,6 +224,37 @@ async def add_routes_bulk(
     return created, skipped
 
 
+async def update_route(
+    session: AsyncSession,
+    route_id: int,
+    source_id: int,
+    target_id: int,
+) -> Route:
+    """Update one route while preserving the unique source-target constraint."""
+    route = await session.get(Route, route_id)
+    if route is None:
+        raise ValueError(f"路由 {route_id} 不存在。")
+    source = await session.get(Source, source_id)
+    target = await session.get(Target, target_id)
+    if source is None or target is None:
+        raise ValueError("搬运源或接收目标不存在。")
+    duplicate = await session.scalar(
+        select(Route).where(
+            Route.source_id == source_id,
+            Route.target_id == target_id,
+            Route.id != route_id,
+        )
+    )
+    if duplicate is not None:
+        raise ValueError("该搬运源和接收目标的搭配已经存在。")
+
+    route.source_id = source_id
+    route.target_id = target_id
+    await session.commit()
+    await session.refresh(route)
+    return route
+
+
 async def delete_source(session: AsyncSession, source_id: int) -> dict[str, int]:
     """Delete a source and all of its associated configuration and jobs."""
     source = await session.get(Source, source_id)

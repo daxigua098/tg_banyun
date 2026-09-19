@@ -346,3 +346,36 @@ def test_delete_source_endpoint_returns_cleanup_counts(monkeypatch) -> None:
         "jobs": 9,
         "rules": 1,
     }
+
+
+def test_update_route_endpoint_changes_pair(monkeypatch) -> None:
+    config = load_config()
+    config.web.api_token = ""
+    config.web.admin_password = ""
+    config.web.session_secret = ""
+    monkeypatch.setattr(api_main, "load_config", lambda: config)
+
+    async def fake_update_route(session, route_id, source_id, target_id):
+        assert (route_id, source_id, target_id) == (5, 2, 9)
+        return SimpleNamespace(
+            id=route_id,
+            source_id=source_id,
+            target_id=target_id,
+            enabled=True,
+        )
+
+    monkeypatch.setattr(api_main, "update_route", fake_update_route)
+
+    with TestClient(create_app()) as client:
+        response = client.put(
+            "/api/routes/5",
+            json={"source_id": 2, "target_id": 9},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": 5,
+        "source_id": 2,
+        "target_id": 9,
+        "enabled": True,
+    }

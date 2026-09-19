@@ -76,3 +76,13 @@ def test_source_page_offers_delete_action() -> None:
     assert "removeSource(row)" in app_source
     assert "deleteSource(row.id)" in app_source
     assert "export const deleteSource" in api_source
+
+
+def test_route_page_offers_edit_action() -> None:
+    app_source = (PROJECT_ROOT / "frontend" / "src" / "App.vue").read_text(encoding="utf-8")
+    api_source = (PROJECT_ROOT / "frontend" / "src" / "api.js").read_text(encoding="utf-8")
+
+    assert "openRouteEditor(row)" in app_source
+    assert "saveRouteEditor" in app_source
+    assert "编辑路由搭配" in app_source
+    assert "export const updateRoute" in api_source

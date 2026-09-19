@@ -208,8 +208,9 @@
                     <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '已启用' : '已停用' }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="100">
+                <el-table-column label="操作" width="150">
                   <template #default="{ row }">
+                    <el-button type="primary" link @click="openRouteEditor(row)">编辑</el-button>
                     <el-button type="danger" link @click="removeRoute(row)">删除</el-button>
                   </template>
                 </el-table-column>
@@ -547,6 +548,35 @@
       </el-main>
     </el-container>
 
+    <el-dialog v-model="routeEditDialog" title="编辑路由搭配" width="620px">
+      <el-form label-width="100px">
+        <el-form-item label="搬运源">
+          <el-select v-model="routeEditForm.source_id" filterable style="width: 100%">
+            <el-option
+              v-for="source in sources"
+              :key="source.id"
+              :label="`${source.id} · ${source.display_name || source.title}`"
+              :value="source.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="接收目标">
+          <el-select v-model="routeEditForm.target_id" filterable style="width: 100%">
+            <el-option
+              v-for="target in targets"
+              :key="target.id"
+              :label="`${target.id} · ${target.display_name || target.title}`"
+              :value="target.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="routeEditDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveRouteEditor">保存修改</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="accessDialog" title="权限检测结果" width="760px">
       <el-table :data="accessResults" stripe>
         <el-table-column label="类型" width="110">
@@ -671,6 +701,7 @@ import {
   logoutAllSessions,
   logoutSession,
   deleteRoute,
+  updateRoute,
   enqueueAddSource,
   enqueueAddTarget,
   enqueueSync,
@@ -721,6 +752,8 @@ const loading = ref(false)
 const lastRefresh = ref('')
 const chartElement = ref(null)
 const newRoute = ref({ source_ids: [], target_ids: [] })
+const routeEditDialog = ref(false)
+const routeEditForm = ref({ id: null, source_id: null, target_id: null })
 
 const routePreviewPairs = computed(() => {
   const pairs = []
@@ -1019,6 +1052,30 @@ async function addRoutes() {
   const result = await createRoutesBatch(newRoute.value.source_ids, newRoute.value.target_ids)
   ElMessage.success(`新增 ${result.created_count} 条，跳过 ${result.skipped_count} 条已存在关系`)
   newRoute.value = { source_ids: [], target_ids: [] }
+  await refreshAll()
+}
+
+function openRouteEditor(row) {
+  routeEditForm.value = {
+    id: row.id,
+    source_id: row.source_id,
+    target_id: row.target_id,
+  }
+  routeEditDialog.value = true
+}
+
+async function saveRouteEditor() {
+  if (!routeEditForm.value.source_id || !routeEditForm.value.target_id) {
+    ElMessage.warning('请选择搬运源和接收目标')
+    return
+  }
+  await updateRoute(
+    routeEditForm.value.id,
+    routeEditForm.value.source_id,
+    routeEditForm.value.target_id,
+  )
+  ElMessage.success('路由搭配已修改')
+  routeEditDialog.value = false
   await refreshAll()
 }
 

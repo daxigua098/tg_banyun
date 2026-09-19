@@ -170,3 +170,42 @@ async def test_delete_source_removes_routes_rules_and_jobs() -> None:
 
     assert deleted == {"routes": 1, "jobs": 1, "rules": 1}
     await engine.dispose()
+
+
+async def test_update_route_changes_pair_and_rejects_duplicate() -> None:
+    session_factory, engine = await _build_factory()
+    async with session_factory() as session:
+        sources = [
+            Source(raw_input="@s1", normalized_key="username:s1", tg_id=1, title="S1"),
+            Source(raw_input="@s2", normalized_key="username:s2", tg_id=2, title="S2"),
+        ]
+        targets = [
+            Target(raw_input="@t1", normalized_key="username:t1", tg_id=11, title="T1"),
+            Target(raw_input="@t2", normalized_key="username:t2", tg_id=12, title="T2"),
+        ]
+        session.add_all([*sources, *targets])
+        await session.commit()
+        first = Route(source_id=sources[0].id, target_id=targets[0].id)
+        second = Route(source_id=sources[1].id, target_id=targets[1].id)
+        session.add_all([first, second])
+        await session.commit()
+        first_id = first.id
+        source_ids = [item.id for item in sources]
+        target_ids = [item.id for item in targets]
+
+        updated = await source_service.update_route(
+            session,
+            first_id,
+            source_ids[1],
+            target_ids[0],
+        )
+        assert (updated.source_id, updated.target_id) == (source_ids[1], target_ids[0])
+
+        with pytest.raises(ValueError, match="已经存在"):
+            await source_service.update_route(
+                session,
+                first_id,
+                source_ids[1],
+                target_ids[1],
+            )
+    await engine.dispose()
