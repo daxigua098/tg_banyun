@@ -407,7 +407,7 @@ async def test_search_monitor_sends_username_and_query() -> None:
     assert len(fake_client.messages) == 1
     entity, message = fake_client.messages[0]
     assert entity == 201
-    assert "可联系用户名：@customer" in message
+    assert "用户：@customer" in message
     assert "用户 ID：777" in message
     assert "搜索内容：AI 主播" in message
     await engine.dispose()
@@ -455,6 +455,6 @@ async def test_search_monitor_uses_clickable_name_when_username_is_missing() -> 
     await service.process_pending()
 
     _, message = fake_client.messages[0]
-    assert '<a href="tg://user?id=888">点击联系 @Daniel</a>' in message
+    assert '<a href="tg://user?id=888">@Daniel</a>' in message
     assert "搜索内容：搜索测试" in message
     await engine.dispose()
