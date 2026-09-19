@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 from collections.abc import Callable, Iterable
 from contextlib import asynccontextmanager
@@ -213,7 +214,11 @@ class SequentialTransferService:
                 else:
                     result = await self._forward_message(source, target, batch)
                 try:
-                    await self._apply_additional_content(target, result)
+                    await self._apply_additional_content(
+                        target,
+                        result,
+                        append_text=not bool(getattr(rule, "search_monitor", False)),
+                    )
                 except Exception as exc:  # noqa: BLE001 - post already sent
                     logger.error(
                         "Additional content failed target={} error={}: {}",
@@ -378,7 +383,13 @@ class SequentialTransferService:
                     exc,
                 )
 
-    async def _apply_additional_content(self, target: Target, result: Any) -> None:
+    async def _apply_additional_content(
+        self,
+        target: Target,
+        result: Any,
+        *,
+        append_text: bool = True,
+    ) -> None:
         async with self.session_factory() as session:
             settings = await get_additional_settings(session, self.config.additional)
         if not settings.enabled:
@@ -386,7 +397,7 @@ class SequentialTransferService:
 
         target_entity = target.tg_id or target.raw_input
         target_message = self._first_result_message(result)
-        if settings.text and target_message is not None:
+        if append_text and settings.text and target_message is not None:
             original = target_message.raw_text or ""
             new_text = f"{original}\n\n{settings.text}".strip()
             async with self.operation_lock if self.operation_lock else _null_async_context():
@@ -443,15 +454,28 @@ class SequentialTransferService:
             ) if sender else "未知用户"
             sender_id = getattr(sender, "id", None) or getattr(source_message, "sender_id", None)
             search_text = str(getattr(source_message, "raw_text", "") or "").strip()
-            identity = f"@{sender_username}" if sender_username else sender_name
+            if sender_username:
+                user_html = f"@{html.escape(sender_username)}"
+            elif sender_id:
+                user_html = (
+                    f'<a href="tg://user?id={int(sender_id)}">'
+                    f"@{html.escape(sender_name)}</a>"
+                )
+            else:
+                user_html = f"@{html.escape(sender_name)}"
             lines = [
-                f"👤 用户：{identity}",
+                f"👤 用户：{user_html}",
                 f"🆔 用户 ID：{sender_id or '-'}",
-                f"🔎 搜索内容：{search_text}",
+                f"🔎 搜索内容：{html.escape(search_text)}",
             ]
+            async with self.session_factory() as session:
+                additional = await get_additional_settings(session, self.config.additional)
+            if additional.enabled and additional.text:
+                lines.extend(["", html.escape(additional.text)])
             return await self.client.send_message(
                 target_entity,
                 "\n".join(lines),
+                parse_mode="html",
                 link_preview=False,
             )
 
