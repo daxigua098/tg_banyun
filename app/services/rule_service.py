@@ -141,6 +141,7 @@ async def replace_source_rule(
     post_only: bool,
     admin_only: bool,
     skip_forwarded: bool,
+    search_monitor: bool,
     keyword_whitelist: list[str],
     keyword_blacklist: list[str],
     sender_whitelist: list[int],
@@ -153,6 +154,7 @@ async def replace_source_rule(
     rule.post_only = post_only
     rule.admin_only = admin_only
     rule.skip_forwarded = skip_forwarded
+    rule.search_monitor = search_monitor
     rule.keyword_whitelist = json.dumps(keyword_whitelist, ensure_ascii=False)
     rule.keyword_blacklist = json.dumps(keyword_blacklist, ensure_ascii=False)
     rule.sender_whitelist = json.dumps(sender_whitelist)

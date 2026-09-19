@@ -168,11 +168,22 @@ class HistorySyncService:
             return False
         if not should_transfer_for_source(message, self.config.content_filter, rule):
             logger.debug(
-                "Skipping non-media message source={} message={}",
+                "Skipping filtered message source={} message={}",
                 source_id,
                 message_id,
             )
             return False
+        if bool(getattr(rule, "search_monitor", False)):
+            if not str(getattr(message, "raw_text", "") or "").strip():
+                return False
+            sender = await message.get_sender() if hasattr(message, "get_sender") else None
+            if sender is not None and bool(getattr(sender, "bot", False)):
+                logger.debug(
+                    "Skipping bot message source={} message={}",
+                    source_id,
+                    message_id,
+                )
+                return False
         if fuzzy_keywords:
             text = str(getattr(message, "raw_text", "") or "").casefold()
             normalized_keywords = [item.casefold() for item in fuzzy_keywords]

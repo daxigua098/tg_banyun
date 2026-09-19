@@ -137,6 +137,13 @@ async def _migrate_source_rules(connection: AsyncConnection) -> None:
                 "ADD COLUMN sender_blacklist TEXT NOT NULL DEFAULT '[]'"
             )
         )
+    if "search_monitor" not in columns:
+        await connection.execute(
+            text(
+                "ALTER TABLE source_rules "
+                "ADD COLUMN search_monitor BOOLEAN NOT NULL DEFAULT 0"
+            )
+        )
 
 
 async def init_database(config: AppConfig) -> None:
