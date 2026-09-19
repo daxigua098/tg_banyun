@@ -456,15 +456,17 @@ class SequentialTransferService:
             search_text = str(getattr(source_message, "raw_text", "") or "").strip()
             if sender_username:
                 user_html = f"@{html.escape(sender_username)}"
+                user_line = f"👤 可联系用户名：{user_html}"
             elif sender_id:
                 user_html = (
                     f'<a href="tg://user?id={int(sender_id)}">'
-                    f"@{html.escape(sender_name)}</a>"
+                    f"点击联系 @{html.escape(sender_name)}</a>"
                 )
+                user_line = f"👤 用户：{user_html}"
             else:
-                user_html = f"@{html.escape(sender_name)}"
+                user_line = f"👤 用户：@{html.escape(sender_name)}（不可点击）"
             lines = [
-                f"👤 用户：{user_html}",
+                user_line,
                 f"🆔 用户 ID：{sender_id or '-'}",
                 f"🔎 搜索内容：{html.escape(search_text)}",
             ]
