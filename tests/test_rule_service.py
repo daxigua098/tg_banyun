@@ -145,20 +145,3 @@ async def test_rule_lists_can_be_cleared_with_dash() -> None:
         assert load_sender_ids(rule.sender_whitelist) == []
     await engine.dispose()
 
-
-def test_search_monitor_allows_plain_text_messages() -> None:
-    rule = SourceRule(source_id=1, search_monitor=True)
-    message = SimpleNamespace(
-        photo=None,
-        video=None,
-        media=None,
-        raw_text="AI 主播",
-        forward=None,
-        fwd_from=None,
-    )
-
-    assert (
-        should_transfer_for_source(message, ContentFilterConfig(media_only=True), rule)
-        is True
-    )
-

@@ -192,7 +192,6 @@ class RuleUpdate(BaseModel):
     post_only: bool = False
     admin_only: bool = False
     skip_forwarded: bool = False
-    search_monitor: bool = False
     keyword_whitelist: list[str] = Field(default_factory=list)
     keyword_blacklist: list[str] = Field(default_factory=list)
     sender_whitelist: list[int] = Field(default_factory=list)
@@ -720,7 +719,6 @@ def create_app() -> FastAPI:
             post_only=payload.post_only,
             admin_only=payload.admin_only,
             skip_forwarded=payload.skip_forwarded,
-            search_monitor=payload.search_monitor,
             keyword_whitelist=payload.keyword_whitelist,
             keyword_blacklist=payload.keyword_blacklist,
             sender_whitelist=payload.sender_whitelist,
@@ -733,7 +731,6 @@ def create_app() -> FastAPI:
             "post_only": rule.post_only,
             "admin_only": rule.admin_only,
             "skip_forwarded": rule.skip_forwarded,
-            "search_monitor": rule.search_monitor,
             "keyword_whitelist": payload.keyword_whitelist,
             "keyword_blacklist": payload.keyword_blacklist,
             "sender_whitelist": payload.sender_whitelist,
@@ -765,7 +762,6 @@ def create_app() -> FastAPI:
                 "post_only": rule.post_only,
                 "admin_only": rule.admin_only,
                 "skip_forwarded": rule.skip_forwarded,
-                "search_monitor": rule.search_monitor,
                 "keyword_whitelist": load_keywords(rule.keyword_whitelist),
                 "keyword_blacklist": load_keywords(rule.keyword_blacklist),
                 "sender_whitelist": load_sender_ids(rule.sender_whitelist),

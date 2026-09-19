@@ -16,7 +16,7 @@ from telethon.errors import MessageIdInvalidError
 from app.config import AppConfig, TransferConfig
 from app.core.message_batch import MessageBatch
 from app.core.transfer import SequentialTransferService
-from app.models import Base, DeliveryJob, RecordTarget, Route, Source, SourceRule, Target
+from app.models import Base, DeliveryJob, RecordTarget, Route, Source, Target
 
 
 class FakeTelegramClient:
@@ -24,14 +24,9 @@ class FakeTelegramClient:
         self.calls: list[tuple[int, int | tuple[int, ...]]] = []
         self.messages: list[tuple[int, str]] = []
         self.albums: list[bool] = []
-        self.source_messages: dict[int, object] = {}
 
-    async def send_message(self, entity: int, text: str, **kwargs: object) -> SimpleNamespace:
+    async def send_message(self, entity: int, text: str) -> None:
         self.messages.append((int(entity), text))
-        return SimpleNamespace(id=9000 + len(self.messages))
-
-    async def get_messages(self, entity: int, ids: int) -> object | None:
-        return self.source_messages.get(ids)
 
     async def forward_messages(
         self,
@@ -360,54 +355,4 @@ async def test_process_pending_stops_before_next_job_when_requested() -> None:
         )
     assert [job.status for job in jobs] == ["success", "pending"]
 
-    await engine.dispose()
-
-
-async def test_search_monitor_sends_username_and_query() -> None:
-    session_factory, engine = await _build_factory()
-    fake_client = FakeTelegramClient()
-    config = AppConfig(transfer=TransferConfig(delay_seconds=0))
-
-    class FakeSourceMessage:
-        raw_text = "AI 主播"
-
-        async def get_sender(self):
-            return SimpleNamespace(
-                id=777,
-                username="customer",
-                first_name="Customer",
-                bot=False,
-            )
-
-    fake_client.source_messages[55] = FakeSourceMessage()
-    async with session_factory() as session:
-        source = Source(
-            raw_input="@search",
-            normalized_key="username:search",
-            tg_id=100,
-            title="Search",
-        )
-        target = Target(
-            raw_input="@target",
-            normalized_key="username:target",
-            tg_id=201,
-            title="Target",
-        )
-        session.add_all([source, target])
-        await session.commit()
-        session.add(Route(source_id=source.id, target_id=target.id))
-        session.add(SourceRule(source_id=source.id, search_monitor=True))
-        await session.commit()
-        source_id = source.id
-
-    service = SequentialTransferService(fake_client, session_factory, config)
-    await service.enqueue_message(source_id, 55)
-    await service.process_pending()
-
-    assert len(fake_client.messages) == 1
-    entity, message = fake_client.messages[0]
-    assert entity == 201
-    assert "用户：@customer" in message
-    assert "用户 ID：777" in message
-    assert "搜索内容：AI 主播" in message
     await engine.dispose()

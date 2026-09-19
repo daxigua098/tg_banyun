@@ -573,7 +573,6 @@
         <el-form-item label="图片"><el-switch v-model="ruleForm.allow_photo" /></el-form-item>
         <el-form-item label="视频"><el-switch v-model="ruleForm.allow_video" /></el-form-item>
         <el-form-item label="仅频道帖子"><el-switch v-model="ruleForm.post_only" /></el-form-item>
-        <el-form-item label="搜索群监听"><el-switch v-model="ruleForm.search_monitor" /></el-form-item>
         <el-form-item label="仅管理员"><el-switch v-model="ruleForm.admin_only" /></el-form-item>
         <el-form-item label="跳过转发"><el-switch v-model="ruleForm.skip_forwarded" /></el-form-item>
         <el-form-item label="关键词白名单"><el-input v-model="ruleForm.keyword_whitelist_text" placeholder="逗号分隔" /></el-form-item>
@@ -1023,7 +1022,6 @@ function openRule(row) {
     post_only: row.post_only,
     admin_only: row.admin_only,
     skip_forwarded: row.skip_forwarded,
-    search_monitor: row.search_monitor,
     keyword_whitelist_text: row.keyword_whitelist.join(','),
     keyword_blacklist_text: row.keyword_blacklist.join(','),
     sender_whitelist_text: row.sender_whitelist.join(','),
@@ -1048,7 +1046,6 @@ async function saveRule() {
     post_only: form.post_only,
     admin_only: form.admin_only,
     skip_forwarded: form.skip_forwarded,
-    search_monitor: form.search_monitor,
     keyword_whitelist: parseTextList(form.keyword_whitelist_text),
     keyword_blacklist: parseTextList(form.keyword_blacklist_text),
     sender_whitelist: parseIdList(form.sender_whitelist_text),

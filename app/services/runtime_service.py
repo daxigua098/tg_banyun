@@ -413,12 +413,6 @@ class RuntimeService:
             return False
         if not should_transfer_for_source(message, self.config.content_filter, rule):
             return False
-        if bool(getattr(rule, "search_monitor", False)):
-            if not str(getattr(message, "raw_text", "") or "").strip():
-                return False
-            sender = await message.get_sender() if hasattr(message, "get_sender") else None
-            if sender is not None and bool(getattr(sender, "bot", False)):
-                return False
         if rule.admin_only:
             entity = source.tg_id or source.raw_input
             return await is_admin_or_channel_post(self.client, entity, message)

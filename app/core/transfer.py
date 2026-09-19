@@ -20,7 +20,6 @@ from app.config import AppConfig
 from app.core.message_batch import MessageBatch
 from app.models import DeliveryJob, RecordTarget, Route, Source, Target
 from app.services.notifier_service import AdminNotifier
-from app.services.rule_service import get_source_rule
 from app.services.settings_service import get_additional_settings
 
 
@@ -202,16 +201,12 @@ class SequentialTransferService:
                 return
 
             batch = self._batch_from_job(job)
-            rule = await get_source_rule(session, job.source_id)
             job.status = "processing"
             job.attempt_count += 1
             await session.commit()
 
             try:
-                if bool(getattr(rule, "search_monitor", False)):
-                    result = await self._send_search_monitor(source, target, batch)
-                else:
-                    result = await self._forward_message(source, target, batch)
+                result = await self._forward_message(source, target, batch)
                 try:
                     await self._apply_additional_content(target, result)
                 except Exception as exc:  # noqa: BLE001 - post already sent
@@ -418,42 +413,6 @@ class SequentialTransferService:
         if isinstance(result, Iterable):
             return next(iter(result), None)
         return None
-
-    async def _send_search_monitor(
-        self,
-        source: Source,
-        target: Target,
-        batch: MessageBatch,
-    ) -> Any:
-        source_entity = source.tg_id or source.raw_input
-        target_entity = target.tg_id or target.raw_input
-        async with self.operation_lock if self.operation_lock else _null_async_context():
-            source_message = await self.client.get_messages(
-                source_entity,
-                ids=batch.primary_message_id,
-            )
-            if source_message is None:
-                raise ValueError(f"源消息不存在：{batch.primary_message_id}")
-            sender = await source_message.get_sender()
-            sender_username = getattr(sender, "username", None) if sender else None
-            sender_name = (
-                getattr(sender, "first_name", None)
-                or getattr(sender, "title", None)
-                or "未知用户"
-            ) if sender else "未知用户"
-            sender_id = getattr(sender, "id", None) or getattr(source_message, "sender_id", None)
-            search_text = str(getattr(source_message, "raw_text", "") or "").strip()
-            identity = f"@{sender_username}" if sender_username else sender_name
-            lines = [
-                f"👤 用户：{identity}",
-                f"🆔 用户 ID：{sender_id or '-'}",
-                f"🔎 搜索内容：{search_text}",
-            ]
-            return await self.client.send_message(
-                target_entity,
-                "\n".join(lines),
-                link_preview=False,
-            )
 
     async def _forward_message(
         self,

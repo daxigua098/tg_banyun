@@ -46,7 +46,7 @@ def should_transfer_for_source(
     rule: Any,
 ) -> bool:
     """Apply global media settings and one source's keyword/forwarding rules."""
-    if not should_transfer_message(message, config) and not bool(rule.search_monitor):
+    if not should_transfer_message(message, config):
         return False
 
     media_kind = detect_media_kind(message)

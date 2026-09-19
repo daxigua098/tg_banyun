@@ -204,7 +204,6 @@ class SourceRule(TimestampMixin, Base):
     skip_forwarded: Mapped[bool] = mapped_column(Boolean, default=False)
     post_only: Mapped[bool] = mapped_column(Boolean, default=False)
     admin_only: Mapped[bool] = mapped_column(Boolean, default=False)
-    search_monitor: Mapped[bool] = mapped_column(Boolean, default=False)
 
     source: Mapped[Source] = relationship()
 
