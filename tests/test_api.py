@@ -258,3 +258,36 @@ def test_batch_route_endpoint_returns_created_and_skipped_counts(monkeypatch) ->
     assert response.json()["created_count"] == 2
     assert response.json()["skipped_count"] == 1
     assert response.json()["skipped"] == [{"source_id": 11, "target_id": 20}]
+
+
+def test_access_check_endpoint_enqueues_permission_command(monkeypatch) -> None:
+    config = load_config()
+    config.web.api_token = ""
+    config.web.admin_password = ""
+    config.web.session_secret = ""
+    monkeypatch.setattr(api_main, "load_config", lambda: config)
+    captured: dict[str, object] = {}
+
+    class StubCommand:
+        id = 321
+        status = "pending"
+
+    async def fake_enqueue_control_command(session, command_type, payload):
+        captured["command_type"] = command_type
+        captured["payload"] = payload
+        return StubCommand()
+
+    monkeypatch.setattr(api_main, "enqueue_control_command", fake_enqueue_control_command)
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/access/check",
+            json={"source_ids": [1, 2], "target_ids": [9]},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"id": 321, "status": "pending"}
+    assert captured == {
+        "command_type": "check_access",
+        "payload": {"source_ids": [1, 2], "target_ids": [9]},
+    }

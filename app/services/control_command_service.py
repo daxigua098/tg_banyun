@@ -15,6 +15,7 @@ COMMAND_ADD_TARGET = "add_target"
 COMMAND_SYNC = "sync"
 COMMAND_NOTIFY_ADMINS = "notify_admins"
 COMMAND_MANUAL_POST = "manual_post"
+COMMAND_CHECK_ACCESS = "check_access"
 
 
 async def enqueue_control_command(
@@ -28,6 +29,7 @@ async def enqueue_control_command(
         COMMAND_ADD_TARGET,
         COMMAND_SYNC,
         COMMAND_NOTIFY_ADMINS,
+        COMMAND_CHECK_ACCESS,
     }
     if command_type not in supported_commands:
         raise ValueError(f"不支持的控制命令：{command_type}")

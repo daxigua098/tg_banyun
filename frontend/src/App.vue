@@ -91,9 +91,10 @@
             </el-table-column>
             <el-table-column prop="sync_status" label="同步状态" width="110" />
             <el-table-column prop="last_synced_message_id" label="最新消息 ID" width="150" />
-            <el-table-column label="操作" width="130">
+            <el-table-column label="操作" width="220">
               <template #default="{ row }">
                 <el-button type="primary" link @click="openImmediateSync(row)">立即搬运</el-button>
+                <el-button link @click="checkSourceAccess(row)">检测权限</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -110,6 +111,11 @@
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
                 <el-switch v-model="row.enabled" @change="changeTargetEnabled(row)" />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="120">
+              <template #default="{ row }">
+                <el-button link @click="checkTargetAccess(row)">检测权限</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -529,6 +535,28 @@
       </el-main>
     </el-container>
 
+    <el-dialog v-model="accessDialog" title="权限检测结果" width="760px">
+      <el-table :data="accessResults" stripe>
+        <el-table-column label="类型" width="110">
+          <template #default="{ row }">
+            <el-tag :type="row.kind === 'source' ? 'primary' : 'success'">
+              {{ row.kind === 'source' ? '搬运源' : '接收目标' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="name" label="名称" min-width="220" />
+        <el-table-column label="结果" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.ok ? 'success' : 'danger'">{{ row.ok ? '通过' : '失败' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="message" label="说明" min-width="260" />
+      </el-table>
+      <template #footer>
+        <el-button @click="accessDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="ruleDialog" title="编辑过滤规则" width="620px">
       <el-form label-width="120px">
         <el-form-item label="图片"><el-switch v-model="ruleForm.allow_photo" /></el-form-item>
@@ -625,6 +653,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   changePassword,
   checkAuth,
+  checkAccess,
   createRoutesBatch,
   login as loginRequest,
   logoutAllSessions,
@@ -711,6 +740,9 @@ const webUsers = ref([])
 const userDialog = ref(false)
 const sourceDialog = ref(false)
 const syncDialog = ref(false)
+const accessDialog = ref(false)
+const accessResults = ref([])
+const accessChecking = ref(false)
 const syncForm = ref({ sourceId: null, sourceName: '', limit: 30, keywordsText: '' })
 const targetDialog = ref(false)
 const addSourceForm = ref({ name: '', input: '', join: false })
@@ -798,6 +830,7 @@ const commandTypeLabels = {
   add_target: '添加接收目标',
   manual_post: '手动群发',
   notify_admins: '管理员通知',
+  check_access: '权限检测',
 }
 
 const commandStatusLabels = {
@@ -819,6 +852,12 @@ function commandStatusLabel(value) {
 function commandResultLabel(row) {
   if (row.error) return row.error
   if (row.status === 'cancelled') return '任务已停止'
+  if (row.command_type === 'check_access') {
+    const result = parseCommandResult(row)
+    const results = result.results || []
+    const failed = results.filter((item) => !item.ok).length
+    return `权限检测：通过 ${results.length - failed} 项，未通过 ${failed} 项`
+  }
   if (row.command_type !== 'sync') return row.result || '-'
   if (['pending', 'processing'].includes(row.status)) return '后台正在扫描历史消息'
   let result = {}
@@ -875,6 +914,50 @@ async function changeSourceEnabled(row) {
 async function changeTargetEnabled(row) {
   await setTargetEnabled(row.id, row.enabled)
   ElMessage.success('目标状态已更新')
+}
+
+function parseCommandResult(item) {
+  try {
+    return item?.result ? JSON.parse(item.result) : {}
+  } catch {
+    return {}
+  }
+}
+
+async function runAccessCheck(sourceIds = [], targetIds = []) {
+  if (accessChecking.value) return
+  accessChecking.value = true
+  try {
+    const command = await checkAccess(sourceIds, targetIds)
+    ElMessage.info('权限检测已提交，正在检查账号访问权限...')
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1000))
+      const commands = await getControlCommands(50)
+      const item = commands.find((entry) => entry.id === command.id)
+      if (!item || !['success', 'failed'].includes(item.status)) continue
+      const result = parseCommandResult(item)
+      accessResults.value = result.results || []
+      accessDialog.value = true
+      const failed = accessResults.value.filter((entry) => !entry.ok).length
+      if (item.status === 'failed' || failed) {
+        ElMessage.warning(`权限检测完成：${failed} 项未通过`)
+      } else {
+        ElMessage.success('权限检测完成：全部通过')
+      }
+      return
+    }
+    ElMessage.warning('权限检测仍在执行，请到“排队任务”查看结果')
+  } finally {
+    accessChecking.value = false
+  }
+}
+
+function checkSourceAccess(row) {
+  return runAccessCheck([row.id], [])
+}
+
+function checkTargetAccess(row) {
+  return runAccessCheck([], [row.id])
 }
 
 function routesForSource(sourceId) {

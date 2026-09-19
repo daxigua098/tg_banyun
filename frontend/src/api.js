@@ -44,6 +44,8 @@ export const enqueueAddTarget = (name, input) =>
 export const enqueueSync = (sourceId, limit = 100, keywords = [], recent = true) =>
   api.post('/api/control/sync', { source_id: sourceId, limit, keywords, recent }).then((response) => response.data)
 
+export const checkAccess = (sourceIds = [], targetIds = []) =>
+  api.post('/api/access/check', { source_ids: sourceIds, target_ids: targetIds }).then((response) => response.data)
 export const checkAuth = () => api.get('/api/auth/check').then((response) => response.data)
 
 export const login = (username, password) => api.post('/api/auth/login', { username, password }).then((response) => response.data)

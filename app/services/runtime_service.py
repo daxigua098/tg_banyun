@@ -31,6 +31,7 @@ from app.services.backup_service import (
 from app.services.control_command_service import (
     COMMAND_ADD_SOURCE,
     COMMAND_ADD_TARGET,
+    COMMAND_CHECK_ACCESS,
     COMMAND_MANUAL_POST,
     COMMAND_NOTIFY_ADMINS,
     COMMAND_SYNC,
@@ -381,6 +382,8 @@ class RuntimeService:
                         result = await self.client.send_message(entity, text)
                 sent.append({"target_id": target_id, "message_id": int(getattr(result, "id", 0))})
             return {"sent": sent}
+        if command.command_type == COMMAND_CHECK_ACCESS:
+            return await self._check_access(payload)
         if command.command_type == COMMAND_NOTIFY_ADMINS:
             text = str(payload.get("text") or "TG-Mirror-Bot 异常通知")
             if self.notifier is not None:
@@ -411,6 +414,106 @@ class RuntimeService:
             )
             return {"source_id": int(source_value), "inspected": inspected}
         raise ValueError(f"不支持的控制命令：{command.command_type}")
+
+    async def _check_access(self, payload: dict[str, Any]) -> dict[str, Any]:
+        me = await self.client.get_me()
+        results: list[dict[str, Any]] = []
+
+        for source_id in [int(item) for item in payload.get("source_ids") or []]:
+            async with self.session_factory() as session:
+                source = await session.get(Source, source_id)
+            if source is None:
+                results.append(
+                    {
+                        "kind": "source",
+                        "id": source_id,
+                        "name": f"源 {source_id}",
+                        "ok": False,
+                        "message": "搬运源不存在",
+                    }
+                )
+                continue
+            entity = source.tg_id or source.raw_input
+            try:
+                if self.operation_lock is None:
+                    await self.client.get_messages(entity, limit=1)
+                else:
+                    async with self.operation_lock:
+                        await self.client.get_messages(entity, limit=1)
+            except Exception as exc:  # noqa: BLE001 - report Telegram access failures
+                results.append(
+                    {
+                        "kind": "source",
+                        "id": source_id,
+                        "name": source.display_name or source.title or source.raw_input,
+                        "ok": False,
+                        "message": f"无法读取消息：{type(exc).__name__}: {exc}",
+                    }
+                )
+            else:
+                results.append(
+                    {
+                        "kind": "source",
+                        "id": source_id,
+                        "name": source.display_name or source.title or source.raw_input,
+                        "ok": True,
+                        "message": "可以读取消息",
+                    }
+                )
+
+        for target_id in [int(item) for item in payload.get("target_ids") or []]:
+            async with self.session_factory() as session:
+                target = await session.get(Target, target_id)
+            if target is None:
+                results.append(
+                    {
+                        "kind": "target",
+                        "id": target_id,
+                        "name": f"目标 {target_id}",
+                        "ok": False,
+                        "message": "接收目标不存在",
+                    }
+                )
+                continue
+            entity = target.tg_id or target.raw_input
+            try:
+                if self.operation_lock is None:
+                    permissions = await self.client.get_permissions(entity, me)
+                else:
+                    async with self.operation_lock:
+                        permissions = await self.client.get_permissions(entity, me)
+                can_send = bool(
+                    getattr(permissions, "is_admin", False)
+                    or getattr(permissions, "is_creator", False)
+                    or getattr(permissions, "send_messages", False)
+                    or getattr(permissions, "post_messages", False)
+                )
+            except Exception as exc:  # noqa: BLE001 - report Telegram permission failures
+                results.append(
+                    {
+                        "kind": "target",
+                        "id": target_id,
+                        "name": target.display_name or target.title or target.raw_input,
+                        "ok": False,
+                        "message": f"无法检查发送权限：{type(exc).__name__}: {exc}",
+                    }
+                )
+            else:
+                results.append(
+                    {
+                        "kind": "target",
+                        "id": target_id,
+                        "name": target.display_name or target.title or target.raw_input,
+                        "ok": can_send,
+                        "message": (
+                            "可以发送/发帖"
+                            if can_send
+                            else "没有发送或发帖权限（可能被禁言或不是频道管理员）"
+                        ),
+                    }
+                )
+
+        return {"results": results}
 
     async def _consume_queue(self) -> None:
         while True:

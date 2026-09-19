@@ -45,3 +45,13 @@ def test_source_page_displays_all_bound_targets() -> None:
     assert "routesForSource(syncForm.sourceId)" in source
     assert "该源还没有建立接收目标" in source
     assert "该搬运源还没有启用的接收目标" in source
+
+
+def test_source_and_target_pages_offer_permission_checks() -> None:
+    app_source = (PROJECT_ROOT / "frontend" / "src" / "App.vue").read_text(encoding="utf-8")
+    api_source = (PROJECT_ROOT / "frontend" / "src" / "api.js").read_text(encoding="utf-8")
+
+    assert "checkSourceAccess(row)" in app_source
+    assert "checkTargetAccess(row)" in app_source
+    assert "权限检测结果" in app_source
+    assert "checkAccess" in api_source

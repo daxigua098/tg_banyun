@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
 from app.config import AppConfig
+from app.models import Base, Source, Target
 from app.services.control_command_service import COMMAND_SYNC
 from app.services.runtime_service import RuntimeService
 
@@ -61,3 +65,76 @@ async def test_runtime_sync_command_passes_fuzzy_keywords() -> None:
         "fuzzy_keywords": ["AI", "主播"],
         "recent": True,
     }
+
+
+async def test_runtime_access_check_reports_source_and_target_permissions() -> None:
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+    )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    async with session_factory() as session:
+        source = Source(
+            raw_input="@source",
+            normalized_key="username:source",
+            tg_id=100,
+            title="Source",
+        )
+        target = Target(
+            raw_input="@target",
+            normalized_key="username:target",
+            tg_id=200,
+            title="Target",
+        )
+        session.add_all([source, target])
+        await session.commit()
+        source_id = source.id
+        target_id = target.id
+
+    class FakeAccessClient:
+        async def get_me(self):
+            return SimpleNamespace(id=1)
+
+        async def get_messages(self, entity, limit):
+            return []
+
+        async def get_permissions(self, entity, me):
+            return SimpleNamespace(
+                is_admin=False,
+                is_creator=False,
+                send_messages=True,
+                post_messages=False,
+            )
+
+    service = RuntimeService(
+        FakeAccessClient(),  # type: ignore[arg-type]
+        session_factory,
+        SimpleNamespace(),  # type: ignore[arg-type]
+        AppConfig(),
+        operation_lock=None,
+    )
+    result = await service._check_access(
+        {"source_ids": [source_id], "target_ids": [target_id]}
+    )
+
+    assert result == {
+        "results": [
+            {
+                "kind": "source",
+                "id": source_id,
+                "name": "Source",
+                "ok": True,
+                "message": "可以读取消息",
+            },
+            {
+                "kind": "target",
+                "id": target_id,
+                "name": "Target",
+                "ok": True,
+                "message": "可以发送/发帖",
+            },
+        ]
+    }
+    await engine.dispose()

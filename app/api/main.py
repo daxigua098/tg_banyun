@@ -51,6 +51,7 @@ from app.services.audit_service import list_audit_logs, write_audit_log
 from app.services.control_command_service import (
     COMMAND_ADD_SOURCE,
     COMMAND_ADD_TARGET,
+    COMMAND_CHECK_ACCESS,
     COMMAND_MANUAL_POST,
     COMMAND_SYNC,
     enqueue_control_command,
@@ -119,6 +120,11 @@ class RouteCreate(BaseModel):
 class RouteBatchCreate(BaseModel):
     source_ids: list[int] = Field(min_length=1, max_length=200)
     target_ids: list[int] = Field(min_length=1, max_length=200)
+
+
+class AccessCheckRequest(BaseModel):
+    source_ids: list[int] = Field(default_factory=list)
+    target_ids: list[int] = Field(default_factory=list)
 
 
 class UploadDeleteRequest(BaseModel):
@@ -793,6 +799,23 @@ def create_app() -> FastAPI:
             "cancelled": cancelled,
             "processing": processing,
         }
+
+    @app.post("/api/access/check", dependencies=[Depends(require_auth)])
+    async def enqueue_access_check(
+        payload: AccessCheckRequest,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, Any]:
+        if not payload.source_ids and not payload.target_ids:
+            raise HTTPException(status_code=400, detail="至少选择一个搬运源或接收目标")
+        command = await enqueue_control_command(
+            session,
+            COMMAND_CHECK_ACCESS,
+            {
+                "source_ids": payload.source_ids,
+                "target_ids": payload.target_ids,
+            },
+        )
+        return {"id": command.id, "status": command.status}
 
     @app.post("/api/control/add-source", dependencies=[Depends(require_auth)])
     async def command_add_source(
