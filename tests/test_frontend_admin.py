@@ -55,3 +55,15 @@ def test_source_and_target_pages_offer_permission_checks() -> None:
     assert "checkTargetAccess(row)" in app_source
     assert "权限检测结果" in app_source
     assert "checkAccess" in api_source
+
+
+def test_content_settings_offer_edit_and_delete_sync_toggles() -> None:
+    app_source = (PROJECT_ROOT / "frontend" / "src" / "App.vue").read_text(encoding="utf-8")
+    api_source = (PROJECT_ROOT / "frontend" / "src" / "api.js").read_text(encoding="utf-8")
+
+    assert "syncSettings.edits" in app_source
+    assert "syncSettings.deletes" in app_source
+    assert "源消息编辑同步" in app_source
+    assert "源消息删除同步" in app_source
+    assert "getSyncBehavior" in api_source
+    assert "updateSyncBehavior" in api_source

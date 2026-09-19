@@ -291,3 +291,32 @@ def test_access_check_endpoint_enqueues_permission_command(monkeypatch) -> None:
         "command_type": "check_access",
         "payload": {"source_ids": [1, 2], "target_ids": [9]},
     }
+
+
+def test_sync_behavior_settings_endpoint_round_trip(monkeypatch) -> None:
+    config = load_config()
+    config.web.api_token = ""
+    config.web.admin_password = ""
+    config.web.session_secret = ""
+    monkeypatch.setattr(api_main, "load_config", lambda: config)
+
+    async def fake_get_sync_behavior(session, defaults):
+        return defaults
+
+    async def fake_set_sync_behavior(session, settings):
+        return settings
+
+    monkeypatch.setattr(api_main, "get_sync_behavior", fake_get_sync_behavior)
+    monkeypatch.setattr(api_main, "set_sync_behavior", fake_set_sync_behavior)
+
+    with TestClient(create_app()) as client:
+        current = client.get("/api/settings/sync")
+        updated = client.put(
+            "/api/settings/sync",
+            json={"edits": True, "deletes": True},
+        )
+
+    assert current.status_code == 200
+    assert current.json() == {"edits": False, "deletes": False}
+    assert updated.status_code == 200
+    assert updated.json() == {"edits": True, "deletes": True}

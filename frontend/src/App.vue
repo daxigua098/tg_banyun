@@ -353,7 +353,18 @@
               <el-input v-model="additionalForm.imagePathsText" type="textarea" :rows="3" placeholder="每行一个图片路径，例如 assets/uploads/xxx.png" />
             </el-form-item>
             <el-form-item label="图片说明"><el-input v-model="additionalForm.image_caption" placeholder="发送附加图片时的说明文字" /></el-form-item>
-            <el-form-item><el-button type="primary" @click="saveAdditionalSettings">保存设置</el-button></el-form-item>
+            <el-form-item label="源消息编辑同步">
+              <el-switch v-model="syncSettings.edits" />
+              <span class="upload-hint">源消息编辑后，同步修改已发送的目标消息</span>
+            </el-form-item>
+            <el-form-item label="源消息删除同步">
+              <el-switch v-model="syncSettings.deletes" />
+              <span class="upload-hint">源消息删除后，同步删除已发送的目标消息</span>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="saveAdditionalSettings">保存附加内容</el-button>
+              <el-button @click="saveSyncSettings">保存编辑/删除同步设置</el-button>
+            </el-form-item>
           </el-form>
           <el-alert title="当前版本会将 LOGO/广告图作为附加图片发送，不会叠加到原图上。图片水印需要后续接入 FFmpeg。" type="info" :closable="false" />
         </el-card>
@@ -666,6 +677,7 @@ import {
   generateAdImage,
   getAdImageDefaults,
   getAdditionalSettings,
+  getSyncBehavior,
   getUploadAssets,
   sendManualPost,
   getAuditLogs,
@@ -685,6 +697,7 @@ import {
   setTargetEnabled,
   updateUser,
   updateAdditionalSettings,
+  updateSyncBehavior,
   updateAdImageDefaults,
   deleteUploadAssets,
   uploadAdditionalImage,
@@ -750,6 +763,7 @@ const addTargetForm = ref({ name: '', input: '' })
 const userForm = ref({ username: '', password: '', role: 'viewer' })
 const passwordForm = ref({ current: '', next: '', confirm: '' })
 const additionalForm = ref({ enabled: false, text: '', image_paths: [], imagePathsText: '', image_caption: '' })
+const syncSettings = ref({ edits: false, deletes: false })
 const manualForm = ref({ targetIds: [], imagePaths: [] })
 const manualEditor = ref(null)
 const adImageForm = ref({ text: '', width: 1080, height: 1080, outputFormat: 'static', background: null })
@@ -806,6 +820,7 @@ async function refreshAll() {
     loginHistory.value = authenticated.value ? await getLoginHistory() : []
     webUsers.value = authenticated.value && userRole.value === 'super_admin' ? await getUsers() : []
     await loadAdditionalSettings()
+    await loadSyncSettings()
     await loadAdImageDefaults()
     await loadUploadAssets()
     await loadJobs()
@@ -1241,6 +1256,16 @@ async function deleteSingleUpload(row) {
 
 async function deleteSelectedUploads() {
   await deleteUploads(selectedUploads.value.map((item) => item.filename))
+}
+
+async function loadSyncSettings() {
+  if (!authenticated.value) return
+  syncSettings.value = await getSyncBehavior()
+}
+
+async function saveSyncSettings() {
+  syncSettings.value = await updateSyncBehavior(syncSettings.value)
+  ElMessage.success('编辑/删除同步设置已保存')
 }
 
 async function loadAdImageDefaults() {

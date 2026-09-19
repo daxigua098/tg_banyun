@@ -73,6 +73,8 @@ export const logoutAllSessions = () =>
 
 export const getAdditionalSettings = () =>
   api.get('/api/settings/additional').then((response) => response.data)
+export const getSyncBehavior = () => api.get('/api/settings/sync').then((response) => response.data)
+export const updateSyncBehavior = (payload) => api.put('/api/settings/sync', payload).then((response) => response.data)
 export const updateAdditionalSettings = (payload) =>
   api.put('/api/settings/additional', payload).then((response) => response.data)
 

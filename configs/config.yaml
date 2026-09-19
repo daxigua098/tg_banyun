@@ -45,6 +45,10 @@ additional:
   image_paths: []
   image_caption: ""
 
+sync:
+  edits: false
+  deletes: false
+
 ad_image:
   default_width: 1080
   default_height: 1080

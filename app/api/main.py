@@ -29,7 +29,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import PROJECT_ROOT, AdditionalConfig, AdImageConfig, AppConfig, load_config
+from app.config import (
+    PROJECT_ROOT,
+    AdditionalConfig,
+    AdImageConfig,
+    AppConfig,
+    SyncBehaviorConfig,
+    load_config,
+)
 from app.core.auth import create_session_token, verify_session_token
 from app.core.heartbeat import is_process_running, read_runtime_status
 from app.core.runtime_control import (
@@ -77,7 +84,9 @@ from app.services.session_service import (
 )
 from app.services.settings_service import (
     get_additional_settings,
+    get_sync_behavior,
     set_additional_settings,
+    set_sync_behavior,
 )
 from app.services.source_service import add_routes_bulk
 from app.services.upload_asset_service import (
@@ -129,6 +138,11 @@ class AccessCheckRequest(BaseModel):
 
 class UploadDeleteRequest(BaseModel):
     filenames: list[str] = Field(min_length=1)
+
+
+class SyncBehaviorUpdate(BaseModel):
+    edits: bool = False
+    deletes: bool = False
 
 
 class AdImageDefaultsUpdate(BaseModel):
@@ -489,6 +503,25 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         headers = {"Content-Disposition": f'inline; filename="ad-{uuid4().hex}.{extension}"'}
         return Response(content=content, media_type=media_type, headers=headers)
+
+    @app.get("/api/settings/sync", dependencies=[Depends(require_auth)])
+    async def sync_behavior_settings(
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, bool]:
+        config: AppConfig = app.state.config
+        settings = await get_sync_behavior(session, config.sync)
+        return settings.model_dump()
+
+    @app.put("/api/settings/sync", dependencies=[Depends(require_auth)])
+    async def update_sync_behavior_settings(
+        payload: SyncBehaviorUpdate,
+        session: AsyncSession = Depends(session_dependency),
+    ) -> dict[str, bool]:
+        settings = await set_sync_behavior(
+            session,
+            SyncBehaviorConfig.model_validate(payload.model_dump()),
+        )
+        return settings.model_dump()
 
     @app.get("/api/settings/additional", dependencies=[Depends(require_auth)])
     async def additional_settings(

@@ -6,8 +6,8 @@ from types import SimpleNamespace
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.config import AppConfig
-from app.models import Base, Source, Target
+from app.config import AppConfig, SyncBehaviorConfig
+from app.models import Base, DeliveryJob, Source, Target
 from app.services.control_command_service import COMMAND_SYNC
 from app.services.runtime_service import RuntimeService
 
@@ -137,4 +137,68 @@ async def test_runtime_access_check_reports_source_and_target_permissions() -> N
             },
         ]
     }
+    await engine.dispose()
+
+
+async def test_runtime_syncs_source_edits_and_deletes_when_enabled() -> None:
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+    )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    async with session_factory() as session:
+        source = Source(
+            raw_input="@source",
+            normalized_key="username:source",
+            tg_id=100,
+            title="Source",
+        )
+        target = Target(
+            raw_input="@target",
+            normalized_key="username:target",
+            tg_id=200,
+            title="Target",
+        )
+        session.add_all([source, target])
+        await session.commit()
+        session.add(
+            DeliveryJob(
+                source_id=source.id,
+                target_id=target.id,
+                source_message_id=10,
+                source_message_ids="[10]",
+                status="success",
+                target_message_id=500,
+            )
+        )
+        await session.commit()
+
+    class FakeSyncClient:
+        def __init__(self) -> None:
+            self.edits: list[tuple[int, int, str]] = []
+            self.deletes: list[tuple[int, int]] = []
+
+        async def edit_message(self, entity, message_id, text, **kwargs):
+            self.edits.append((int(entity), int(message_id), text))
+
+        async def delete_messages(self, entity, message_ids):
+            self.deletes.append((int(entity), int(message_ids[0])))
+
+    client = FakeSyncClient()
+    service = RuntimeService(
+        client,  # type: ignore[arg-type]
+        session_factory,
+        SimpleNamespace(),  # type: ignore[arg-type]
+        AppConfig(sync=SyncBehaviorConfig(edits=True, deletes=True)),
+        operation_lock=None,
+    )
+    await service._on_message_edited(
+        SimpleNamespace(chat_id=100, message=SimpleNamespace(id=10, raw_text="新内容"))
+    )
+    await service._on_message_deleted(SimpleNamespace(chat_id=100, deleted_ids=[10]))
+
+    assert client.edits == [(200, 500, "新内容")]
+    assert client.deletes == [(200, 500)]
     await engine.dispose()

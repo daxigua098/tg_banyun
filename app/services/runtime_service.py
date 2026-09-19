@@ -21,7 +21,7 @@ from app.core.message_batch import MessageBatch
 from app.core.runtime_control import is_runtime_paused, is_runtime_stopped
 from app.core.sender_filter import is_admin_or_channel_post
 from app.core.transfer import SequentialTransferService
-from app.models import ControlCommand, Route, Source, Target
+from app.models import ControlCommand, DeliveryJob, Route, Source, Target
 from app.services.backup_service import (
     create_backup,
     is_backup_due,
@@ -41,6 +41,7 @@ from app.services.delivery_job_service import cancel_pending_jobs
 from app.services.history_service import HistorySyncService
 from app.services.notifier_service import AdminNotifier
 from app.services.rule_service import get_source_rule
+from app.services.settings_service import get_additional_settings, get_sync_behavior
 from app.services.source_service import add_source, add_target
 
 
@@ -82,6 +83,8 @@ class RuntimeService:
             func=self._is_non_album,
         )
         self._album_filter = events.Album()
+        self._edited_filter = events.MessageEdited()
+        self._deleted_filter = events.MessageDeleted()
 
     def _transfer_should_stop(self) -> bool:
         return is_runtime_paused(self.control_path) or is_runtime_stopped(self.control_path)
@@ -107,6 +110,8 @@ class RuntimeService:
 
         self.client.add_event_handler(self._on_new_message, self._new_message_filter)
         self.client.add_event_handler(self._on_album, self._album_filter)
+        self.client.add_event_handler(self._on_message_edited, self._edited_filter)
+        self.client.add_event_handler(self._on_message_deleted, self._deleted_filter)
         worker: asyncio.Task[None] | None = None
         heartbeat_task = asyncio.create_task(
             self._heartbeat_loop(),
@@ -145,6 +150,8 @@ class RuntimeService:
                     await worker
             self.client.remove_event_handler(self._on_new_message, self._new_message_filter)
             self.client.remove_event_handler(self._on_album, self._album_filter)
+            self.client.remove_event_handler(self._on_message_edited, self._edited_filter)
+            self.client.remove_event_handler(self._on_message_deleted, self._deleted_filter)
             await self._write_heartbeat("stopped")
 
     async def _heartbeat_loop(self) -> None:
@@ -270,6 +277,124 @@ class RuntimeService:
                 messages.append(message)
         if messages:
             await self.queue.put((source_id, MessageBatch.from_messages(messages)))
+
+    async def _on_message_edited(self, event: events.MessageEdited.Event) -> None:
+        async with self.session_factory() as session:
+            settings = await get_sync_behavior(session, self.config.sync)
+        if not settings.edits:
+            return
+        chat_id = event.chat_id
+        if chat_id is None:
+            return
+        source_id = await self._source_id_for_chat(int(chat_id))
+        if source_id is None:
+            return
+        jobs = await self._successful_jobs_for_source_message(source_id, int(event.message.id))
+        if not jobs:
+            return
+        async with self.session_factory() as session:
+            additional = await get_additional_settings(session, self.config.additional)
+        text = str(getattr(event.message, "raw_text", "") or "")
+        if additional.enabled and additional.text:
+            text = f"{text}\n\n{additional.text}".strip()
+        for job in jobs:
+            async with self.session_factory() as session:
+                target = await session.get(Target, job.target_id)
+            if target is None or job.target_message_id is None:
+                continue
+            entity = target.tg_id or target.raw_input
+            try:
+                if self.operation_lock is None:
+                    await self.client.edit_message(
+                        entity,
+                        job.target_message_id,
+                        text,
+                        link_preview=False,
+                    )
+                else:
+                    async with self.operation_lock:
+                        await self.client.edit_message(
+                            entity,
+                            job.target_message_id,
+                            text,
+                            link_preview=False,
+                        )
+                logger.info(
+                    "Synchronized edit source={} message={} target={} target_message={}",
+                    source_id,
+                    event.message.id,
+                    target.id,
+                    job.target_message_id,
+                )
+            except Exception as exc:  # noqa: BLE001 - one target failure must not stop others
+                logger.warning(
+                    "Edit sync failed source={} message={} target={} error={}",
+                    source_id,
+                    event.message.id,
+                    target.id,
+                    exc,
+                )
+
+    async def _on_message_deleted(self, event: events.MessageDeleted.Event) -> None:
+        async with self.session_factory() as session:
+            settings = await get_sync_behavior(session, self.config.sync)
+        if not settings.deletes:
+            return
+        source_id = None
+        if event.chat_id is not None:
+            source_id = await self._source_id_for_chat(int(event.chat_id))
+        for message_id in [int(item) for item in event.deleted_ids]:
+            jobs = await self._successful_jobs_for_source_message(source_id, message_id)
+            for job in jobs:
+                async with self.session_factory() as session:
+                    target = await session.get(Target, job.target_id)
+                if target is None or job.target_message_id is None:
+                    continue
+                entity = target.tg_id or target.raw_input
+                try:
+                    if self.operation_lock is None:
+                        await self.client.delete_messages(entity, [job.target_message_id])
+                    else:
+                        async with self.operation_lock:
+                            await self.client.delete_messages(entity, [job.target_message_id])
+                    logger.info(
+                        "Synchronized delete source={} message={} target={} target_message={}",
+                        source_id,
+                        message_id,
+                        target.id,
+                        job.target_message_id,
+                    )
+                except Exception as exc:  # noqa: BLE001 - one target failure must not stop others
+                    logger.warning(
+                        "Delete sync failed source={} message={} target={} error={}",
+                        source_id,
+                        message_id,
+                        target.id,
+                        exc,
+                    )
+
+    async def _successful_jobs_for_source_message(
+        self,
+        source_id: int | None,
+        message_id: int,
+    ) -> list[DeliveryJob]:
+        async with self.session_factory() as session:
+            statement = select(DeliveryJob).where(
+                DeliveryJob.status == "success",
+                DeliveryJob.target_message_id.is_not(None),
+            )
+            if source_id is not None:
+                statement = statement.where(DeliveryJob.source_id == source_id)
+            rows = list(await session.scalars(statement))
+        matched: list[DeliveryJob] = []
+        for job in rows:
+            try:
+                message_ids = json.loads(job.source_message_ids or "[]")
+            except (TypeError, json.JSONDecodeError):
+                message_ids = [job.source_message_id]
+            if message_id in message_ids or message_id == job.source_message_id:
+                matched.append(job)
+        return matched
 
     async def _source_id_for_chat(self, chat_id: int) -> int | None:
         async with self.session_factory() as session:

@@ -114,6 +114,13 @@ class AdditionalConfig(BaseModel):
     image_caption: str = ""
 
 
+class SyncBehaviorConfig(BaseModel):
+    """Optional synchronization of source message edits and deletions."""
+
+    edits: bool = False
+    deletes: bool = False
+
+
 class AdImageConfig(BaseModel):
     """Default dimensions for generated advertisement images."""
 
@@ -177,6 +184,7 @@ class AppConfig(BaseModel):
     history: HistoryConfig = Field(default_factory=HistoryConfig)
     content_filter: ContentFilterConfig = Field(default_factory=ContentFilterConfig)
     additional: AdditionalConfig = Field(default_factory=AdditionalConfig)
+    sync: SyncBehaviorConfig = Field(default_factory=SyncBehaviorConfig)
     ad_image: AdImageConfig = Field(default_factory=AdImageConfig)
     backup: BackupConfig = Field(default_factory=BackupConfig)
     alerts: AlertConfig = Field(default_factory=AlertConfig)
